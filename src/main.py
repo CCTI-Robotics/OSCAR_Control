@@ -70,8 +70,8 @@ def rc_auto_loop_function_controller_1():
             # calculate the drivetrain motor velocities from the controller joystick axies
             # left = axis3 + axis1
             # right = axis3 - axis1
-            drivetrain_left_side_speed = controller_1.axis3.position() + controller_1.axis1.position()
-            drivetrain_right_side_speed = controller_1.axis3.position() - controller_1.axis1.position()
+            drivetrain_left_side_speed = controller_1.axis1.position() + controller_1.axis3.position()
+            drivetrain_right_side_speed = controller_1.axis1.position() - controller_1.axis3.position()
             
             # check if the value is inside of the deadband range
             if drivetrain_left_side_speed < 5 and drivetrain_left_side_speed > -5:
@@ -108,11 +108,11 @@ def rc_auto_loop_function_controller_1():
                 right_drive_smart.spin(FORWARD)
             # check the buttonR1/buttonR2 status
             # to control lift
-            if controller_1.buttonA.pressing():
-                lift.spin(FORWARD)
+            if controller_1.buttonY.pressing():
+                lift.spin(FORWARD, 100, PERCENT)
                 controller_1_right_scuff_control_motors_stopped = False
             elif controller_1.buttonB.pressing():
-                lift.spin(REVERSE)
+                lift.spin(REVERSE, 100, PERCENT)
                 controller_1_right_scuff_control_motors_stopped = False
             elif not controller_1_right_scuff_control_motors_stopped:
                 lift.stop()
