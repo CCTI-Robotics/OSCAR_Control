@@ -9,8 +9,8 @@ brain=Brain()
 mgR_motor_a = Motor(Ports.PORT1, GearSetting.RATIO_6_1, False)
 mgR_motor_b = Motor(Ports.PORT2, GearSetting.RATIO_6_1, True)
 mgR = MotorGroup(mgR_motor_a, mgR_motor_b)
-mgL_motor_a = Motor(Ports.PORT11, GearSetting.RATIO_18_1, False)
-mgL_motor_b = Motor(Ports.PORT12, GearSetting.RATIO_18_1, True)
+mgL_motor_a = Motor(Ports.PORT11, GearSetting.RATIO_6_1, False)
+mgL_motor_b = Motor(Ports.PORT12, GearSetting.RATIO_6_1, True)
 mgL = MotorGroup(mgL_motor_a, mgL_motor_b)
 controller_1 = Controller(PRIMARY)
 left_drive_smart = mgL
@@ -20,6 +20,8 @@ lift = Motor(Ports.PORT7, GearSetting.RATIO_18_1, True)
 pneum_clamp = DigitalOut(brain.three_wire_port.a)
 distance_rear = Distance(Ports.PORT5)
 distance_front = Distance(Ports.PORT6)
+
+MAX_TURN_SPEED = 5
 
 # wait for rotation sensor to fully initialize
 wait(30, MSEC)
@@ -73,6 +75,16 @@ def rc_auto_loop_function_controller_1():
             drivetrain_left_side_speed = controller_1.axis1.position() + controller_1.axis3.position()
             drivetrain_right_side_speed = controller_1.axis1.position() - controller_1.axis3.position()
             
+            # # USER-DEFINED
+            # # Limit the speed of both motors if the motors are turning in opposite directions (or the robot is rotating)
+            # if (drivetrain_left_side_speed > 0 and drivetrain_right_side_speed < 0) or (drivetrain_left_side_speed < 0 and drivetrain_right_side_speed > 0):
+            #     drivetrain_left = min(abs(drivetrain_left_side_speed), MAX_TURN_SPEED)
+            #     drivetrain_right = min(abs(drivetrain_right_side_speed), MAX_TURN_SPEED)
+
+            #     # Set the motors to the new values
+            #     drivetrain_left_side_speed = drivetrain_left if drivetrain_left_side_speed > 0 else -drivetrain_left
+            #     drivetrain_right_side_speed = drivetrain_right if drivetrain_right_side_speed > 0 else -drivetrain_right
+
             # check if the value is inside of the deadband range
             if drivetrain_left_side_speed < 5 and drivetrain_left_side_speed > -5:
                 # check if the left motor has already been stopped
