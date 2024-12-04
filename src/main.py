@@ -15,13 +15,14 @@ mgL = MotorGroup(mgL_motor_a, mgL_motor_b)
 controller_1 = Controller(PRIMARY)
 left_drive_smart = mgL
 right_drive_smart = mgR
-drivetrain = DriveTrain(left_drive_smart, right_drive_smart, 319.19, 295, 40, MM, 1)
+drive_inertial = Inertial(Ports.PORT15)
+drivetrain = SmartDrive(left_drive_smart, right_drive_smart, drive_inertial, 319.19, 320, 40, MM, 1)
 lift = Motor(Ports.PORT7, GearSetting.RATIO_18_1, True)
 pneum_clamp = DigitalOut(brain.three_wire_port.a)
 distance_rear = Distance(Ports.PORT5)
 distance_front = Distance(Ports.PORT6)
 
-MAX_TURN_SPEED = 5
+MAX_TURN_SPEED = 75
 
 # wait for rotation sensor to fully initialize
 wait(30, MSEC)
@@ -53,13 +54,13 @@ drivetrain_r_needs_to_be_stopped_controller_1 = False
 
 #Event to be called when button is pressed: Toggles the digital out for the Pneumatic clamp
 def toggle_clamp():
-    if pneum_clamp.value:
+    if pneum_clamp.value():
         pneum_clamp.set(False)
     else:
         pneum_clamp.set(True)
 
 #Operates the Pneumatic clamp
-controller_1.buttonY.pressed(toggle_clamp)
+controller_1.buttonDown.pressed(toggle_clamp)
 
 # define a task that will handle monitoring inputs from controller_1
 def rc_auto_loop_function_controller_1():
@@ -75,16 +76,18 @@ def rc_auto_loop_function_controller_1():
             drivetrain_left_side_speed = controller_1.axis1.position() + controller_1.axis3.position()
             drivetrain_right_side_speed = controller_1.axis1.position() - controller_1.axis3.position()
             
-            # # USER-DEFINED
-            # # Limit the speed of both motors if the motors are turning in opposite directions (or the robot is rotating)
-            # if (drivetrain_left_side_speed > 0 and drivetrain_right_side_speed < 0) or (drivetrain_left_side_speed < 0 and drivetrain_right_side_speed > 0):
-            #     drivetrain_left = min(abs(drivetrain_left_side_speed), MAX_TURN_SPEED)
-            #     drivetrain_right = min(abs(drivetrain_right_side_speed), MAX_TURN_SPEED)
+            # USER-DEFINED
+            # Limit the speed of both motors if the motors are turning in opposite directions (or the robot is rotating)
+            if (drivetrain_left_side_speed < 0 and drivetrain_right_side_speed < 0) or (drivetrain_left_side_speed > 0 and drivetrain_right_side_speed > 0):
+                
+                drivetrain_left = min(abs(drivetrain_left_side_speed), MAX_TURN_SPEED)
+                drivetrain_right = min(abs(drivetrain_right_side_speed), MAX_TURN_SPEED)
 
-            #     # Set the motors to the new values
-            #     drivetrain_left_side_speed = drivetrain_left if drivetrain_left_side_speed > 0 else -drivetrain_left
-            #     drivetrain_right_side_speed = drivetrain_right if drivetrain_right_side_speed > 0 else -drivetrain_right
-
+                # Set the motors to the new values
+                drivetrain_left_side_speed = drivetrain_left if drivetrain_left_side_speed > 0 else -drivetrain_left
+                drivetrain_right_side_speed = drivetrain_right if drivetrain_right_side_speed > 0 else -drivetrain_right
+            
+            print(drivetrain_left_side_speed, drivetrain_right_side_speed)
             # check if the value is inside of the deadband range
             if drivetrain_left_side_speed < 5 and drivetrain_left_side_speed > -5:
                 # check if the left motor has already been stopped
@@ -169,10 +172,11 @@ def autonomous():
     drivetrain.drive(FORWARD)
     lift.spin(FORWARD)  # Turn the lift and intake to get ready to score some rings
 
-    
+def screen():
+    controller_1.screen.print("argarh")
 
-
-
-
+pneum_clamp.set(True)
+print(mgR.temperature())
+screen()
 
 comp = Competition(driver_control, autonomous)
