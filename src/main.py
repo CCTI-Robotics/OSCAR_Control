@@ -1,13 +1,14 @@
 #region VEXcode Generated Robot Configuration
 from vex import *
 import urandom
+import time
 
 # Brain should be defined by default
 brain=Brain()
 
 # Robot configuration code
-mgR_motor_a = Motor(Ports.PORT1, GearSetting.RATIO_6_1, False)
-mgR_motor_b = Motor(Ports.PORT2, GearSetting.RATIO_6_1, True)
+mgR_motor_a = Motor(Ports.PORT1, GearSetting.RATIO_6_1, True)
+mgR_motor_b = Motor(Ports.PORT2, GearSetting.RATIO_6_1, False)
 mgR = MotorGroup(mgR_motor_a, mgR_motor_b)
 mgL_motor_a = Motor(Ports.PORT11, GearSetting.RATIO_6_1, False)
 mgL_motor_b = Motor(Ports.PORT12, GearSetting.RATIO_6_1, True)
@@ -16,11 +17,10 @@ controller_1 = Controller(PRIMARY)
 left_drive_smart = mgL
 right_drive_smart = mgR
 drive_inertial = Inertial(Ports.PORT15)
-drivetrain = SmartDrive(left_drive_smart, right_drive_smart, drive_inertial, 319.19, 320, 40, MM, 1)
+drivetrain = SmartDrive(left_drive_smart, right_drive_smart, drive_inertial, 319.19, 320, 320, MM, 0.67)
 lift = Motor(Ports.PORT7, GearSetting.RATIO_18_1, True)
 pneum_clamp = DigitalOut(brain.three_wire_port.a)
 distance_rear = Distance(Ports.PORT5)
-distance_front = Distance(Ports.PORT6)
 
 MAX_TURN_SPEED = 75
 
@@ -73,8 +73,8 @@ def rc_auto_loop_function_controller_1():
             # calculate the drivetrain motor velocities from the controller joystick axies
             # left = axis3 + axis1
             # right = axis3 - axis1
-            drivetrain_left_side_speed = controller_1.axis1.position() + controller_1.axis3.position()
-            drivetrain_right_side_speed = controller_1.axis1.position() - controller_1.axis3.position()
+            drivetrain_left_side_speed = controller_1.axis3.position() + controller_1.axis1.position()
+            drivetrain_right_side_speed = controller_1.axis3.position() - controller_1.axis1.position()
             
             # USER-DEFINED
             # Limit the speed of both motors if the motors are turning in opposite directions (or the robot is rotating)
@@ -145,35 +145,39 @@ remote_control_code_enabled = True
 
 rc_auto_loop_thread_controller_1 = Thread(rc_auto_loop_function_controller_1)
 
-
 def driver_control():
     print("Control driver")
 
 def autonomous():
     controller_1.screen.print("Auto Start!")
     
-    MAX_GOAL_DIST_MM = 145
+    MAX_GOAL_DIST_MM = 70
 
     # Expecting the robot to start facing backwards, the drivetrain will
     # reverse until the distance sensor notices an object (a mobile goal)
-    while distance_rear.object_distance() > MAX_GOAL_DIST_MM:
-        drivetrain.drive(REVERSE)
-        time.sleep(0.1)  # To not overwork the distance sensor
+    # while distance_rear.object_distance() > MAX_GOAL_DIST_MM:
+    #     drivetrain.drive(REVERSE, 25, PERCENT)
+    #     # time.sleep(0.1)  # To not overwork the distance sensor
+
+    drivetrain.set_stopping(COAST)
+    drivetrain.drive_for(REVERSE, 42, INCHES, 25, PERCENT)
 
     # Stop moving the robot and clamp the mobile goal 
-    drivetrain.stop()
-    pneum_clamp.set(True)
+    pneum_clamp.set(False)
 
-    # Spin around until a stack of rings are located. Then, advance to them
-    while distance_front.object_distance() > 300:
-        drivetrain.turn(RIGHT)
-        time.sleep(0.1)  # To not overwork the distance sensor
+    drivetrain.turn_for(LEFT, 80, DEGREES, 10, PERCENT)
+    lift.spin(FORWARD, 100, PERCENT)
+    drivetrain.drive_for(FORWARD, 30, INCHES, 25, PERCENT)
+    drivetrain.stop(BRAKE)
+    time.sleep(2)
+    drivetrain.drive_for(REVERSE, 24, INCHES, 50, PERCENT)
 
-    drivetrain.drive(FORWARD)
-    lift.spin(FORWARD)  # Turn the lift and intake to get ready to score some rings
+    # drivetrain.drive(FORWARD)
+    # lift.spin(FORWARD)  # Turn the lift and intake to get ready to score some rings
 
 def screen():
-    controller_1.screen.print("argarh")
+    scr = controller_1.screen
+    scr.clear_screen()
 
 pneum_clamp.set(True)
 print(mgR.temperature())
