@@ -17,10 +17,10 @@ controller_1 = Controller(PRIMARY)
 left_drive_smart = mgL
 right_drive_smart = mgR
 drive_inertial = Inertial(Ports.PORT15)
-drivetrain = SmartDrive(left_drive_smart, right_drive_smart, drive_inertial, 319.19, 320, 320, MM, 0.67)
+drivetrain = SmartDrive(left_drive_smart, right_drive_smart, drive_inertial, 319.19, 330, 320, MM, 1)
 lift = Motor(Ports.PORT7, GearSetting.RATIO_18_1, True)
 pneum_clamp = DigitalOut(brain.three_wire_port.a)
-distance_rear = Distance(Ports.PORT5)
+opt_rear = Optical(Ports.PORT5)
 
 MAX_TURN_SPEED = 75
 
@@ -159,21 +159,38 @@ def autonomous():
     #     drivetrain.drive(REVERSE, 25, PERCENT)
     #     # time.sleep(0.1)  # To not overwork the distance sensor
 
-    drivetrain.set_stopping(COAST)
-    drivetrain.drive_for(REVERSE, 42, INCHES, 25, PERCENT)
+    # drivetrain.set_stopping(COAST)
+    # drivetrain.drive_for(REVERSE, 42, INCHES, 25, PERCENT)
 
-    # Stop moving the robot and clamp the mobile goal 
-    pneum_clamp.set(False)
+    # # Stop moving the robot and clamp the mobile goal 
+    # pneum_clamp.set(False)
 
-    drivetrain.turn_for(LEFT, 80, DEGREES, 10, PERCENT)
-    lift.spin(FORWARD, 100, PERCENT)
-    drivetrain.drive_for(FORWARD, 30, INCHES, 25, PERCENT)
-    drivetrain.stop(BRAKE)
-    time.sleep(2)
-    drivetrain.drive_for(REVERSE, 24, INCHES, 50, PERCENT)
+    # drivetrain.turn_for(LEFT, 80, DEGREES, 10, PERCENT)
+    # lift.spin(FORWARD, 100, PERCENT)
+    # drivetrain.drive_for(FORWARD, 30, INCHES, 25, PERCENT)
+    # drivetrain.stop(BRAKE)
+    # time.sleep(2)
+    # drivetrain.drive_for(REVERSE, 24, INCHES, 50, PERCENT)
 
     # drivetrain.drive(FORWARD)
     # lift.spin(FORWARD)  # Turn the lift and intake to get ready to score some rings
+
+    while drive_inertial.is_calibrating():
+        wait(100, MSEC)
+
+    while not opt_rear.is_near_object():
+        drivetrain.drive(REVERSE, 45, PERCENT)
+    pneum_clamp.set(False)
+    wait(250, MSEC)
+    drivetrain.stop(BRAKE)
+    drivetrain.turn_for(LEFT, 80, DEGREES, 10, PERCENT)
+    lift.spin(FORWARD, 75, PERCENT)
+    drivetrain.drive_for(FORWARD, 35, INCHES, 25, PERCENT)
+    drivetrain.turn_for(RIGHT, 100, DEGREES,10, PERCENT)
+    drivetrain.drive_for(FORWARD, 12, INCHES, 100, PERCENT)
+    drivetrain.drive_for(REVERSE, 12, INCHES, 50, PERCENT)
+    drivetrain.turn_for(RIGHT, 42, DEGREES)
+    drivetrain.drive_for(FORWARD, 78, INCHES, 50, PERCENT)
 
 def screen():
     scr = controller_1.screen
@@ -182,5 +199,7 @@ def screen():
 pneum_clamp.set(True)
 print(mgR.temperature())
 screen()
+
+drive_inertial.calibrate()
 
 comp = Competition(driver_control, autonomous)
