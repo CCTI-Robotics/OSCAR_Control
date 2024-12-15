@@ -55,14 +55,18 @@ GPS gps = GPS(PORT, origin_x = 10, origin_y = -10, heading_offset = 180) // So t
 OPTICAL optic = OPTICAL(PORT) // So the robot knows if its holding a goal
 SMARTDRIVE drivetrain = SMARTDRIVE(...) // So the robot can move
 
-func GET_DISTANCE (coordinates loc_1, coordinates loc_2)
+func CALC_DISTANCE (coordinates loc_1, coordinates loc_2)
     // The distance formula, sqrt((x2 - x1)^2 + (y2 - y1)^2)
     return (((loc_2[0] - loc_1[0]) ** 2) + ((loc_2[1] - loc_1[1]) ** 2) ** 0.5)
 END
 
-func GET_MAG (coordinates vec)
+func CALC_MAG (coordinates vec)
     // Get the magnitude of a vector, sqrt(x^2 + y^2)
     return (vec[0] ** 2 + vec[1] ** 2) ** 0.5
+END
+
+func CALC_DOTPROD (coordinates vec1, coordinates vec2)
+    return (vec1[0] * vec2[0]) + (vec1[1] * vec2[1])
 END
 
 // Find the closest item in a Findable. Could be improved by sorting the function instead of going through each entry
@@ -71,31 +75,16 @@ func FIND_CLOSEST (coordinates curr_loc, ARRAY[FINDABLE] looking_for)
     closest_dist : FLOAT | NULL = null
 
     LOOP entry IN looking_for
-        IF !closest OR GET_DISTANCE(curr_loc, entry) < closest_dist
+        IF !closest OR CALC_DISTANCE(curr_loc, entry) < closest_dist
             closest = entry
-            closest_dist = GET_DISTANCE(curr_loc, entry)
+            closest_dist = CALC_DISTANCE(curr_loc, entry)
         ENDIF
  
     return closest
 END
 
-// Find how many degrees we must turn to be looking at a target
-func FIND_HEADING (coordinates curr_loc, FINDABLE target)
-    // A resultant vector that defines the line between 
-    res = (looking_for[0] - curr_loc[0], looking_for[1] - curr_loc[0])
-
-    // Get the angle of the vector between the magnitude and X distance
-    angle = ASIN(GET_DISTANCE(curr_loc, looking_for) / res[0])
-
-    return angle
-END
-
 func GPS_POS()
     return (gps.x_position(), gps.y_position)
-
-func DOTPROD(coordinates vec1, coordinates vec2)
-    return (vec1[0] * vec2[0]) + (vec1[1] * vec2[1])
-END
 
 func AUTO_START
     // Calibrate the GPS
@@ -114,8 +103,7 @@ func AUTO_START
 
     // The angle between two vectors can be defined as 
     // θ = cos-1 [ (a · b) / (|a| |b|) ]
-    
-    turn_angle = ACOS(DOTPROD(pos, nearest) / (GET_MAG(pos) * GET_MAG(nearest)))
+    turn_angle = ACOS(CALC_DOTPROD(pos, nearest) / (CALC_MAG(pos) * CALC_MAG(nearest)))
 
     loop 
         IF abs(gps.heading() - orig_heading) >= turn_angle
