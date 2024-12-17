@@ -168,12 +168,11 @@ def driver_control():
     print("Control driver")
 
 def no_auto():
-    controller_1.screen.print("Skipping Auto :(")
+    ... # Skip the autonomous period.
 
 def min_auto():
     # Auto that only grabs a goal. 
     # min_auto works in any quadrant. 
-    print(opt_rear.is_near_object())
 
     while not opt_rear.is_near_object():
         drivetrain.drive(REVERSE, 45, PERCENT)
@@ -183,8 +182,6 @@ def min_auto():
     drivetrain.stop(BRAKE)
 
 def right_auto():
-    controller_1.screen.print("Starting on the right side!")
-
     while drive_inertial.is_calibrating():
         wait(100, MSEC)
 
@@ -200,8 +197,6 @@ def right_auto():
     #drivetrain.drive_for(FORWARD, 78, INCHES, 50, PERCENT)
 
 def left_auto():
-    controller_1.screen.print("Starting on the left side!")
-
     while drive_inertial.is_calibrating():
         wait(100, MSEC)
 
@@ -256,10 +251,35 @@ def left_auto():
 # controller_1.buttonUp.pressed(select_min)
 
 def screen():
+    # Have the controller show the temperatures of the drivetrain motors, for some reason.
     scr = controller_1.screen
-    scr.clear_screen()
+    while True:
+        # Gather all of the temperatures
+        RT_temp = mgR_motor_a.temperature()
+        RB_temp = mgR_motor_b.temperature()
+        LT_temp = mgL_motor_a.temperature()
+        LB_temp = mgL_motor_b.temperature()
+
+        scr.clear_screen() # Make sure we aren't writing over anything
+
+        # Write all of the temperature data to the screen.
+        # I have no idea how many columns the controller has, so this may go off the
+        # screen or be horribly uncentered. This uses about 20 characters per row.
+        scr.set_cursor(1, 1)
+        scr.print("RT - " + str(RT_temp))
+        scr.set_cursor(1, 10)
+        scr.print("| LT - " + str(LT_temp))
+        scr.set_cursor(2, 1)
+        scr.print("RB - " + str(RB_temp))
+        scr.set_cursor(2, 10)
+        scr.print("| LB - " + str(LB_temp))
+
+        time.sleep(5) # Update the motor temperatures on the screen only every five seconds
+
 
 pneum_clamp.set(True)
 drive_inertial.calibrate()
+
+temp_thread = Thread(screen)
 
 comp = Competition(driver_control, min_auto)
