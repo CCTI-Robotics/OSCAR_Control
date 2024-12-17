@@ -5,6 +5,7 @@ class Vector {
     func magnitude() {
         // Calculate the magnitude of the vector. 
         // Magnitude is the distance of the object from the origin.
+        // Magnitude is sqrt(X^2 + Y^2)
         return ((X ** 2) + (Y ** 2)) ** 0.5;
     }
 
@@ -33,10 +34,6 @@ class Vector {
         // Distance formula: sqrt((x2 - x1)^2 + (y2 - y1)^2)
         return (((vec1.X - vec2.X) ** 2) + ((vec1.Y - vec2.Y)) ** 2) ** 0.5;
     }
-
-    static func subtract(Vector vec1, Vector vec2) {
-        return Vector(vec1.X + vec2.X, vec1.Y + vec2.Y)
-    }
 }
 
 RED_RINGS : Array[Vector] = ... 
@@ -58,6 +55,8 @@ func gps_pos() {
 }
 
 class PIDwithGPS {
+    // Both of these functions are very similar. There's probably a better way
+    // to write this. 
     func drive(Vector setpoint) {
         // PID Constants; change to fine-tune output
         int kP = 0;
@@ -116,7 +115,7 @@ class PIDwithGPS {
             }
 
             if (error > 300) {
-                integral - 0;
+                integral = 0;
             }
 
             derivative = error - prevError;
