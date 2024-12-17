@@ -11,9 +11,13 @@ class Vector {
 
     func angle() {
         // Calculate the angle of the vector
-        float offHoriz = arctan(Y/X); // pretend its in degrees
+        // Will always need to be positive between 0-360
+        // I think this goes in a counterclockwise direction, where 45 degrees is 
+        // facing quadrant I and 315 deg is facing quadrant II
+        // This may need to be reversed depending on how the field is set up. 
+        float offHoriz = arctan(Y/X); // Degrees
 
-        if (X > 0, Y > 0) { // Quadrant I
+        if (X > 0, Y > 0) { // Quadrant I 
             return offHoriz;
         } else if (X < 0, Y < 0) { // Quad III
             return offHoriz + 180;
@@ -50,14 +54,16 @@ MotorGroup leftMotors = MotorGroup(...);
 MotorGroup rightMotors = MotorGroup(...);
 SmartDrive drivetrain = SmartDrive(leftMotors, rightMotors, ...);
 
-func gps_pos() {
+func gpsPos() {
     return Vector(gps.x_position(), gps.y_position());
 }
 
+func posAndMag() {
+    return gpsPos().magnitude();
+}
+
 class PIDwithGPS {
-    // Both of these functions are very similar. There's probably a better way
-    // to write this. 
-    func drive(Vector setpoint) {
+    func drive(Function checkValue, int setpoint, bool turn = false) {
         // PID Constants; change to fine-tune output
         int kP = 0;
         int kI = 0;
@@ -70,13 +76,13 @@ class PIDwithGPS {
         int derivative = 0;
         int power = 0;
 
-        loop while (gps_pos().magnitude() != setpoint.magnitude()) {
+        loop while (checkValue() != setpoint) {
             // Error is the amount of space between where we want to go and where we are
-            error = setpoint.magnitude() - gps_pos().magnitude();
+            error = setpoint - checkValue;
             integral += error;
 
             // We are very close to our location or overshot it
-            if (error == 0 or error > setpoint.magnitude()) {
+            if (error == 0 or error > setpoint) {
                 integral = 0;
             }
 
@@ -89,43 +95,12 @@ class PIDwithGPS {
             prevError = error;
 
             power = (error * kP) + (integral * kI) + (derivative * kD);
-            drivetrain.drive(FORWARD, power, PERCENT);
+            if not turn:
+                drivetrain.drive(FORWARD, power, PERCENT);
+            else:
+                drivetrain.turn(RIGHT, power, PERCENT);
         }
     }
-
-    func turn(int setpoint) {
-        // Turn our robot to face a certain direction. 
-        int kP = 0;
-        int kI = 0;
-        int kD = 0;
-
-        // Changes each loop
-        int integral = 0;
-        int error = 0;
-        int prevError = 0;
-        int derivative = 0;
-        int power = 0;
-
-        loop while (gps.heading() != setpoint) {
-            error = setpoint - gps.heading();
-            integral += error;
-
-            if (error = 0 or error > setpoint) {
-                integral = 0;
-            }
-
-            if (error > 300) {
-                integral = 0;
-            }
-
-            derivative = error - prevError;
-            prevError = error;
-
-            power = (error * kP) + (integral * kI) + (derivative * kD);
-            drivetrain.turn(RIGHT, power, PERCENT);
-        }
-    }
-}
 
 func findClosest(Vector curr_loc, Array[Vector] looking_for) {
     // Find the closest item to the robot. 
@@ -154,7 +129,10 @@ func auto() {
     Vector pos = gps_pos();
     Vector closest = findClosest(pos, MOBILE_GOALS);
 
-    float bot_heading = gps.heading(); // Where is the robot facin
+    // Turn to face the closest mobile goal
+    pid.drive(gps.heading, closest.angle() - 180); // -180 to make the robot face backwards for picking up the goal
+    // Now drive backwards towards it to pick it up
+    pid.drive(posAndMag, closest.magnitude());
 
-    pid.turn(closest.angle());
+    // The rest (TBD After we verify this works)
 }
