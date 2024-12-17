@@ -22,8 +22,6 @@ lift = Motor(Ports.PORT7, GearSetting.RATIO_18_1, True)
 pneum_clamp = DigitalOut(brain.three_wire_port.a)
 opt_rear = Optical(Ports.PORT5)
 
-MAX_TURN_SPEED = 55
-
 # wait for rotation sensor to fully initialize
 wait(30, MSEC)
 
@@ -62,12 +60,23 @@ def toggle_clamp():
 #Operates the Pneumatic clamp
 controller_1.buttonDown.pressed(toggle_clamp)
 
+MAX_TURN_SPEED = 55 # Percent
+MAX_SPEED = 100 # Percent
+ACCELERATION = 75 # Percent per second 
+
 # define a task that will handle monitoring inputs from controller_1
 def rc_auto_loop_function_controller_1():
     global drivetrain_l_needs_to_be_stopped_controller_1, drivetrain_r_needs_to_be_stopped_controller_1, controller_1_right_scuff_control_motors_stopped, remote_control_code_enabled
     # process the controller input every 20 milliseconds
     # update the motors based on the input values
+    last_time = time.time()
+    delta = 0
+    velocity = 0
+
     while True:
+        delta = time.time() - last_time
+        last_time = time.time()
+
         if remote_control_code_enabled:
             
             # calculate the drivetrain motor velocities from the controller joystick axies
@@ -77,15 +86,24 @@ def rc_auto_loop_function_controller_1():
             drivetrain_right_side_speed = controller_1.axis3.position() - controller_1.axis1.position()
             
             # USER-DEFINED
+            # Calculate acceleration so the robot doesn't start moving at 100% velocity immediately.
+            velocity += ACCELERATION * delta
+            drivetrain_left = min(velocity, abs(drivetrain_left_side_speed))
+            drivetrain_right = min(velocity, abs(drivetrain_right_side_speed))
+
+            # Correct the signs of the velocity since we had to take the absolute value of the speed in order to use the min function
+            drivetrain_left_side_speed = drivetrain_left if drivetrain_left_side_speed > 0 else -drivetrain_left
+            drivetrain_right_side_speed = drivetrain_right if drivetrain_left_side_speed > 0 else -drivetrain_right
+
             # Limit the speed of both motors if the motors are turning in opposite directions (or the robot is rotating)
             if (drivetrain_left_side_speed < 0 and drivetrain_right_side_speed > 0) or (drivetrain_left_side_speed > 0 and drivetrain_right_side_speed < 0):
                 
                 drivetrain_left = min(abs(drivetrain_left_side_speed), MAX_TURN_SPEED)
                 drivetrain_right = min(abs(drivetrain_right_side_speed), MAX_TURN_SPEED)
 
-                # Set the motors to the new values
+                # Correct the signs of the velocity since we had to take the absolute value of the speed in order to use the min function
                 drivetrain_left_side_speed = drivetrain_left if drivetrain_left_side_speed > 0 else -drivetrain_left
-                drivetrain_right_side_speed = drivetrain_right if drivetrain_right_side_speed > 0 else -drivetrain_right
+                drivetrain_right_side_speed = drivetrain_right if drivetrain_left_side_speed > 0 else -drivetrain_right
             
             # check if the value is inside of the deadband range
             if drivetrain_left_side_speed < 5 and drivetrain_left_side_speed > -5:
@@ -93,6 +111,7 @@ def rc_auto_loop_function_controller_1():
                 if drivetrain_l_needs_to_be_stopped_controller_1:
                     # stop the left drive motor
                     left_drive_smart.stop()
+                    velocity = 0 # Set velocity to zero so robot stops moving and/or is able to accelerate again 
                     # tell the code that the left motor has been stopped
                     drivetrain_l_needs_to_be_stopped_controller_1 = False
             else:
@@ -105,6 +124,7 @@ def rc_auto_loop_function_controller_1():
                 if drivetrain_r_needs_to_be_stopped_controller_1:
                     # stop the right drive motor
                     right_drive_smart.stop()
+                    velocity = 0 # Set velocity to zero so robot stops moving and/or is able to accelerate again 
                     # tell the code that the right motor has been stopped
                     drivetrain_r_needs_to_be_stopped_controller_1 = False
             else:
