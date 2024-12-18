@@ -4,12 +4,12 @@
 		"json": 2
 	},
 	"project": {
-		"name": "Min_Auto",
+		"name": "ALPHA",
 		"description": "",
 		"creationDate": "Thu, 12 Dec 2024 16:13:15 GMT",
 		"platform": "V5",
 		"language": "python",
-		"slot": 3,
+		"slot": 4,
 		"sdkVersion": "V5_1_0_1_25",
 		"python": {
 			"main": "src/main.py"
