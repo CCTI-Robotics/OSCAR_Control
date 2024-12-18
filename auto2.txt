@@ -99,8 +99,11 @@ class PIDwithGPS {
                 drivetrain.drive(FORWARD, power, PERCENT);
             else:
                 drivetrain.turn(RIGHT, power, PERCENT);
+
+            wait 15 mSec; // Regulates the system so the integral doesn't immediately skyrocket to unfathomable numbers
         }
     }
+}
 
 func findClosest(Vector curr_loc, Array[Vector] looking_for) {
     // Find the closest item to the robot. 
