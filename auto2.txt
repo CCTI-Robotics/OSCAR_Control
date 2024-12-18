@@ -1,0 +1,141 @@
+class Vector {
+    X: int;
+    Y: int;
+
+    func magnitude() {
+        // Calculate the magnitude of the vector. 
+        // Magnitude is the distance of the object from the origin.
+        // Magnitude is sqrt(X^2 + Y^2)
+        return ((X ** 2) + (Y ** 2)) ** 0.5;
+    }
+
+    func angle() {
+        // Calculate the angle of the vector
+        // Will always need to be positive between 0-360
+        // I think this goes in a counterclockwise direction, where 45 degrees is 
+        // facing quadrant I and 315 deg is facing quadrant II
+        // This may need to be reversed depending on how the field is set up. 
+        float offHoriz = arctan(Y/X); // Degrees
+
+        if (X > 0, Y > 0) { // Quadrant I 
+            return offHoriz;
+        } else if (X < 0, Y < 0) { // Quad III
+            return offHoriz + 180;
+        } else if (X < 0, Y > 0) { // Quad II
+            return offHoriz + 360;
+        } else if (X > 0, Y < 0) { // Quad IV
+            return offHoriz + 180;
+        }
+    }
+
+    static func dotProd(Vector vec1, Vector vec2) {
+        // Calculate the dot product of a vector
+        return (vec1.X * vec2.X) + (vec1.Y * vec2.Y);
+    }
+
+    static func distance(Vector vec1, Vector vec2) {
+        // Calculate the distance between one vector and another. 
+        // Distance formula: sqrt((x2 - x1)^2 + (y2 - y1)^2)
+        return (((vec1.X - vec2.X) ** 2) + ((vec1.Y - vec2.Y)) ** 2) ** 0.5;
+    }
+}
+
+RED_RINGS : Array[Vector] = ... 
+BLUE_RINGS : Array[Vector] = ...
+MOBILE_GOALS : Array[Vector] = ...
+
+// Define the robot's sensors
+
+// origin_x and origin_y are the distances, in mm, from the middle of the robot.
+// The heading offset is 180 since the GPS is mounted backwards.
+Gps gps = Gps(PORT, origin_x=10, origin_y=-10, heading_offset=180);
+Optical optic = Optical(Port);
+MotorGroup leftMotors = MotorGroup(...);
+MotorGroup rightMotors = MotorGroup(...);
+SmartDrive drivetrain = SmartDrive(leftMotors, rightMotors, ...);
+
+func gpsPos() {
+    return Vector(gps.x_position(), gps.y_position());
+}
+
+func posAndMag() {
+    return gpsPos().magnitude();
+}
+
+class PIDwithGPS {
+    func drive(Function checkValue, int setpoint, bool turn = false) {
+        // PID Constants; change to fine-tune output
+        int kP = 0;
+        int kI = 0;
+        int kD = 0;
+
+        // Changes each loop
+        int integral = 0;
+        int error = 0;
+        int prevError = 0;
+        int derivative = 0;
+        int power = 0;
+
+        loop while (checkValue() != setpoint) {
+            // Error is the amount of space between where we want to go and where we are
+            error = setpoint - checkValue;
+            integral += error;
+
+            // We are very close to our location or overshot it
+            if (error == 0 or error > setpoint) {
+                integral = 0;
+            }
+
+            // Error is outside of useful range
+            if (error > 1000) {
+                integral = 0;
+            }
+
+            derivative = error - prevError;
+            prevError = error;
+
+            power = (error * kP) + (integral * kI) + (derivative * kD);
+            if not turn:
+                drivetrain.drive(FORWARD, power, PERCENT);
+            else:
+                drivetrain.turn(RIGHT, power, PERCENT);
+
+            wait 15 mSec; // Regulates the system so the integral doesn't immediately skyrocket to unfathomable numbers
+        }
+    }
+}
+
+func findClosest(Vector curr_loc, Array[Vector] looking_for) {
+    // Find the closest item to the robot. 
+    Vector closest = null;
+    int closest_distance = null;
+
+    loop (entry in looking_for) {
+        distance = Vector.distance(curr_loc, entry);
+        if (closest == null or distance < closest_distance) {
+            closest = entry;
+            closest_distance = distance;
+        }
+    }
+
+    return closest;
+}
+
+func auto() {
+    gps.calibrate();
+    pid = PIDwithGPS();
+
+    loop (gps.is_calibrating()) {
+        wait 150 mSec;
+    }
+
+    Vector pos = gps_pos();
+    Vector closest = findClosest(pos, MOBILE_GOALS);
+
+    // Turn to face the closest mobile goal
+    pid.drive(gps.heading, closest.angle() - 180); // -180 to make the robot face backwards for picking up the goal
+    // Now drive backwards towards it to pick it up
+    pid.drive(posAndMag, closest.magnitude());
+
+    // The rest (TBD After we verify this works)
+}

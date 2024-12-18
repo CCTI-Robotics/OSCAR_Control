@@ -1,0 +1,115 @@
+RED_RINGS : ARRAY[FINDABLE]
+[(-1500, 1200),
+(-1200, 1500),
+(-1200, 1200),
+(-600, 1200),
+(0, 1500),
+(600, 1200),
+(-600, 600),
+(600, 600),
+(0, 0),
+(-600, -600),
+(600, -600),
+(-1500, -1200),
+(-1200, -1200),
+(-600, -1200),
+(600, -1200),
+(-1200, -1500),
+(0, -1500),
+# Stacks
+(1200, 1500),
+(1200, 1200),
+(1500, 1200),
+(1200, -1200),
+(1500, -1200),
+(1200, -1500),]
+
+BLUE_RINGS : ARRAY[FINDABLE]
+[(1200, 1500),
+(1200, 1200),
+(1500, 1200),
+(1200, -1200),
+(1500, -1200),
+(1200, -1500),
+# Lone
+(1700, -1700),
+(1700, 1700)
+]
+
+MOBILE_GOALS : ARRAY[FINDABLE]
+[(-1200, 600),
+(-1200, -600),
+(1200, 0),
+# Immutable
+(1500, 600),
+(1500, -600),]
+
+STRUCT coordinates
+X: int
+Y: int
+
+TYPE FINDABLE : SET[INT, INT]
+
+// The GPS sensor will tell us coordinates as if it is in the middle of the robot facing forward. 
+GPS gps = GPS(PORT, origin_x = 10, origin_y = -10, heading_offset = 180) // So the robot knows where it is
+OPTICAL optic = OPTICAL(PORT) // So the robot knows if its holding a goal
+SMARTDRIVE drivetrain = SMARTDRIVE(...) // So the robot can move
+
+func CALC_DISTANCE (coordinates loc_1, coordinates loc_2)
+    // The distance formula, sqrt((x2 - x1)^2 + (y2 - y1)^2)
+    return (((loc_2[0] - loc_1[0]) ** 2) + ((loc_2[1] - loc_1[1]) ** 2) ** 0.5)
+END
+
+func CALC_MAG (coordinates vec)
+    // Get the magnitude of a vector, sqrt(x^2 + y^2)
+    return (vec[0] ** 2 + vec[1] ** 2) ** 0.5
+END
+
+func CALC_DOTPROD (coordinates vec1, coordinates vec2)
+    return (vec1[0] * vec2[0]) + (vec1[1] * vec2[1])
+END
+
+// Find the closest item in a Findable. Could be improved by sorting the function instead of going through each entry
+func FIND_CLOSEST (coordinates curr_loc, ARRAY[FINDABLE] looking_for)
+    closest : FINDABLE | NULL = null
+    closest_dist : FLOAT | NULL = null
+
+    LOOP entry IN looking_for
+        IF !closest OR CALC_DISTANCE(curr_loc, entry) < closest_dist
+            closest = entry
+            closest_dist = CALC_DISTANCE(curr_loc, entry)
+        ENDIF
+ 
+    return closest
+END
+
+func GPS_POS()
+    return (gps.x_position(), gps.y_position)
+
+func AUTO_START
+    // Calibrate the GPS
+    gps.calibrate()
+
+    // Wait for the GPS to finish calibrating
+    LOOP WHILE gps.is_calibrating():
+        wait 150 MSEC
+
+    pos = GPS_POS()
+
+    // Find the nearest mobile goal
+    nearest = FIND_CLOSEST(pos, MOBILE_GOALS)
+
+    orig_heading = gps.heading()
+
+    // The angle between two vectors can be defined as 
+    // θ = cos-1 [ (a · b) / (|a| |b|) ]
+    turn_angle = ACOS(CALC_DOTPROD(pos, nearest) / (CALC_MAG(pos) * CALC_MAG(nearest)))
+
+    loop 
+        IF abs(gps.heading() - orig_heading) >= turn_angle
+            drivetrain.STOP()
+            BREAK
+        ENDIF
+        wait 10 MSEC
+
+    

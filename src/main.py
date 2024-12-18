@@ -22,8 +22,6 @@ lift = Motor(Ports.PORT7, GearSetting.RATIO_18_1, True)
 pneum_clamp = DigitalOut(brain.three_wire_port.a)
 opt_rear = Optical(Ports.PORT5)
 
-MAX_TURN_SPEED = 75
-
 # wait for rotation sensor to fully initialize
 wait(30, MSEC)
 
@@ -62,12 +60,23 @@ def toggle_clamp():
 #Operates the Pneumatic clamp
 controller_1.buttonDown.pressed(toggle_clamp)
 
+MAX_TURN_SPEED = 55 # Percent
+MAX_SPEED = 100 # Percent
+ACCELERATION = 75 # Percent per second 
+
 # define a task that will handle monitoring inputs from controller_1
 def rc_auto_loop_function_controller_1():
     global drivetrain_l_needs_to_be_stopped_controller_1, drivetrain_r_needs_to_be_stopped_controller_1, controller_1_right_scuff_control_motors_stopped, remote_control_code_enabled
     # process the controller input every 20 milliseconds
     # update the motors based on the input values
+    last_time = time.time()
+    delta = 0
+    velocity = 0
+
     while True:
+        delta = time.time() - last_time
+        last_time = time.time()
+
         if remote_control_code_enabled:
             
             # calculate the drivetrain motor velocities from the controller joystick axies
@@ -77,23 +86,32 @@ def rc_auto_loop_function_controller_1():
             drivetrain_right_side_speed = controller_1.axis3.position() - controller_1.axis1.position()
             
             # USER-DEFINED
+            # Calculate acceleration so the robot doesn't start moving at 100% velocity immediately.
+            velocity += ACCELERATION * delta
+            drivetrain_left = min(velocity, abs(drivetrain_left_side_speed))
+            drivetrain_right = min(velocity, abs(drivetrain_right_side_speed))
+
+            # Correct the signs of the velocity since we had to take the absolute value of the speed in order to use the min function
+            drivetrain_left_side_speed = drivetrain_left if drivetrain_left_side_speed > 0 else -drivetrain_left
+            drivetrain_right_side_speed = drivetrain_right if drivetrain_left_side_speed > 0 else -drivetrain_right
+
             # Limit the speed of both motors if the motors are turning in opposite directions (or the robot is rotating)
-            if (drivetrain_left_side_speed < 0 and drivetrain_right_side_speed < 0) or (drivetrain_left_side_speed > 0 and drivetrain_right_side_speed > 0):
+            if (drivetrain_left_side_speed < 0 and drivetrain_right_side_speed > 0) or (drivetrain_left_side_speed > 0 and drivetrain_right_side_speed < 0):
                 
                 drivetrain_left = min(abs(drivetrain_left_side_speed), MAX_TURN_SPEED)
                 drivetrain_right = min(abs(drivetrain_right_side_speed), MAX_TURN_SPEED)
 
-                # Set the motors to the new values
+                # Correct the signs of the velocity since we had to take the absolute value of the speed in order to use the min function
                 drivetrain_left_side_speed = drivetrain_left if drivetrain_left_side_speed > 0 else -drivetrain_left
-                drivetrain_right_side_speed = drivetrain_right if drivetrain_right_side_speed > 0 else -drivetrain_right
+                drivetrain_right_side_speed = drivetrain_right if drivetrain_left_side_speed > 0 else -drivetrain_right
             
-            print(drivetrain_left_side_speed, drivetrain_right_side_speed)
             # check if the value is inside of the deadband range
             if drivetrain_left_side_speed < 5 and drivetrain_left_side_speed > -5:
                 # check if the left motor has already been stopped
                 if drivetrain_l_needs_to_be_stopped_controller_1:
                     # stop the left drive motor
                     left_drive_smart.stop()
+                    velocity = 0 # Set velocity to zero so robot stops moving and/or is able to accelerate again 
                     # tell the code that the left motor has been stopped
                     drivetrain_l_needs_to_be_stopped_controller_1 = False
             else:
@@ -106,6 +124,7 @@ def rc_auto_loop_function_controller_1():
                 if drivetrain_r_needs_to_be_stopped_controller_1:
                     # stop the right drive motor
                     right_drive_smart.stop()
+                    velocity = 0 # Set velocity to zero so robot stops moving and/or is able to accelerate again 
                     # tell the code that the right motor has been stopped
                     drivetrain_r_needs_to_be_stopped_controller_1 = False
             else:
@@ -148,41 +167,26 @@ rc_auto_loop_thread_controller_1 = Thread(rc_auto_loop_function_controller_1)
 def driver_control():
     print("Control driver")
 
-def autonomous():
-    controller_1.screen.print("Auto Start!")
-    
-    MAX_GOAL_DIST_MM = 70
+def no_auto():
+    ... # Skip the autonomous period.
 
-    # Expecting the robot to start facing backwards, the drivetrain will
-    # reverse until the distance sensor notices an object (a mobile goal)
-    # while distance_rear.object_distance() > MAX_GOAL_DIST_MM:
-    #     drivetrain.drive(REVERSE, 25, PERCENT)
-    #     # time.sleep(0.1)  # To not overwork the distance sensor
-
-    # drivetrain.set_stopping(COAST)
-    # drivetrain.drive_for(REVERSE, 42, INCHES, 25, PERCENT)
-
-    # # Stop moving the robot and clamp the mobile goal 
-    # pneum_clamp.set(False)
-
-    # drivetrain.turn_for(LEFT, 80, DEGREES, 10, PERCENT)
-    # lift.spin(FORWARD, 100, PERCENT)
-    # drivetrain.drive_for(FORWARD, 30, INCHES, 25, PERCENT)
-    # drivetrain.stop(BRAKE)
-    # time.sleep(2)
-    # drivetrain.drive_for(REVERSE, 24, INCHES, 50, PERCENT)
-
-    # drivetrain.drive(FORWARD)
-    # lift.spin(FORWARD)  # Turn the lift and intake to get ready to score some rings
-
-    while drive_inertial.is_calibrating():
-        wait(100, MSEC)
+def min_auto():
+    # Auto that only grabs a goal. 
+    # min_auto works in any quadrant. 
 
     while not opt_rear.is_near_object():
         drivetrain.drive(REVERSE, 45, PERCENT)
+
     pneum_clamp.set(False)
     wait(250, MSEC)
     drivetrain.stop(BRAKE)
+
+def right_auto():
+    while drive_inertial.is_calibrating():
+        wait(100, MSEC)
+
+    min_auto() # Grab the goal 
+
     drivetrain.turn_for(LEFT, 80, DEGREES, 10, PERCENT)
     lift.spin(FORWARD, 75, PERCENT)
     drivetrain.drive_for(FORWARD, 35, INCHES, 25, PERCENT)
@@ -190,16 +194,92 @@ def autonomous():
     drivetrain.drive_for(FORWARD, 12, INCHES, 100, PERCENT)
     drivetrain.drive_for(REVERSE, 12, INCHES, 50, PERCENT)
     drivetrain.turn_for(RIGHT, 42, DEGREES)
-    drivetrain.drive_for(FORWARD, 78, INCHES, 50, PERCENT)
+    #drivetrain.drive_for(FORWARD, 78, INCHES, 50, PERCENT)
+
+def left_auto():
+    while drive_inertial.is_calibrating():
+        wait(100, MSEC)
+
+    min_auto() # Grab the goal 
+
+    drivetrain.turn_for(RIGHT, 80, DEGREES, 10, PERCENT)
+    lift.spin(FORWARD, 75, PERCENT)
+    drivetrain.drive_for(FORWARD, 35, INCHES, 25, PERCENT)
+    drivetrain.turn_for(LEFT, 100, DEGREES,10, PERCENT)
+    drivetrain.drive_for(FORWARD, 12, INCHES, 100, PERCENT)
+    drivetrain.drive_for(REVERSE, 12, INCHES, 50, PERCENT)
+    drivetrain.turn_for(RIGHT, 42, DEGREES)
+    #drivetrain.drive_for(FORWARD, 78, INCHES, 50, PERCENT)
+
+# Experimental Auto Selector
+
+# def auto_select():
+#     scr = controller_1.screen
+#     scr.clear_screen()
+    
+#     scr.print("A: Right Side")
+#     scr.print("X: Left Side")
+#     scr.print("UP: Min Auto")
+
+# is_left_auto = False
+# is_right_auto = False
+# is_min_auto = False
+
+# def select_left():
+#     global is_left_auto
+#     is_left_auto = True
+#     print("Left")
+
+# def select_right():
+#     global is_right_auto
+#     is_right_auto = True
+#     print("Right")
+
+# def select_min():
+#     global is_min_auto
+#     is_min_auto = True
+#     print("Min")
+
+# def auto():
+#     for config in [(is_min_auto, min_auto), (is_left_auto, left_auto), (is_right_auto, right_auto)]:
+#         if config[0]:
+#             config[1]()
+#             break 
+
+# controller_1.buttonA.pressed(select_right)
+# controller_1.buttonX.pressed(select_left)
+# controller_1.buttonUp.pressed(select_min)
 
 def screen():
+    # Have the controller show the temperatures of the drivetrain motors, for some reason.
     scr = controller_1.screen
-    scr.clear_screen()
+    while True:
+        # Gather all of the temperatures
+        RT_temp = mgR_motor_a.temperature()
+        RB_temp = mgR_motor_b.temperature()
+        LT_temp = mgL_motor_a.temperature()
+        LB_temp = mgL_motor_b.temperature()
+
+        scr.clear_screen() # Make sure we aren't writing over anything
+
+        # Write all of the temperature data to the screen.
+        # I have no idea how many columns the controller has, so this may go off the
+        # screen or be horribly uncentered. This uses about 20 characters per row.
+        scr.set_cursor(1, 1)
+        scr.print("RT - " + str(RT_temp))
+        scr.set_cursor(1, 10)
+        scr.print("| LT - " + str(LT_temp))
+        scr.set_cursor(2, 1)
+        scr.print("RB - " + str(RB_temp))
+        scr.set_cursor(2, 10)
+        scr.print("| LB - " + str(LB_temp))
+
+        time.sleep(5) # Update the motor temperatures on the screen only every five seconds
+
 
 pneum_clamp.set(True)
-print(mgR.temperature())
-screen()
-
 drive_inertial.calibrate()
 
-comp = Competition(driver_control, autonomous)
+temp_thread = Thread(screen)
+
+comp = Competition(driver_control, min_auto)
