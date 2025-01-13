@@ -1,7 +1,6 @@
 #region VEXcode Generated Robot Configuration
 from vex import *
 import urandom
-import time
 
 # Brain should be defined by default
 brain=Brain()
@@ -21,6 +20,7 @@ drivetrain = SmartDrive(left_drive_smart, right_drive_smart, drive_inertial, 319
 lift = Motor(Ports.PORT7, GearSetting.RATIO_18_1, True)
 pneum_clamp = DigitalOut(brain.three_wire_port.a)
 opt_rear = Optical(Ports.PORT5)
+rotation = Rotation(Ports.PORT18)
 
 # wait for rotation sensor to fully initialize
 wait(30, MSEC)
@@ -67,12 +67,13 @@ ACCELERATION = 85 # Percent per second
 # define a task that will handle monitoring inputs from controller_1
 def rc_auto_loop_function_controller_1():
     global drivetrain_l_needs_to_be_stopped_controller_1, drivetrain_r_needs_to_be_stopped_controller_1, controller_1_right_scuff_control_motors_stopped, remote_control_code_enabled
-    global last_time, delta, velocity
+    global last_time, delta, velocity_left, velocity_right
     # process the controller input every 20 milliseconds
     # update the motors based on the input values
     last_time = brain.timer.time(SECONDS)
     delta = 0
-    velocity = 0
+    velocity_left = 0
+    velocity_right = 0
 
     while True:
         delta = brain.timer.time(SECONDS) - last_time
@@ -85,32 +86,18 @@ def rc_auto_loop_function_controller_1():
             # right = axis3 - axis1
             drivetrain_left_axis_value = controller_1.axis3.position() + controller_1.axis1.position()
             drivetrain_right_axis_value = controller_1.axis3.position() - controller_1.axis1.position()
-            
-            # USER-DEFINED
-            # Calculate acceleration so the robot doesn't start moving at 100% velocity immediately.
-            velocity += ACCELERATION * delta
-            # print(velocity, delta)
-            drivetrain_left = min(velocity, abs(drivetrain_left_axis_value))
-            drivetrain_right = min(velocity, abs(drivetrain_right_axis_value))
 
-            # Correct the signs of the velocity since we had to take the absolute value of the speed in order to use the min function
-            drivetrain_left_side_speed = drivetrain_left if drivetrain_left_axis_value > 0 else -drivetrain_left
-            drivetrain_right_side_speed = drivetrain_right if drivetrain_right_axis_value > 0 else -drivetrain_right
+            velocity_left += ACCELERATION * delta
+            velocity_right += ACCELERATION * delta
 
-            # Limit the speed of both motors if the motors are turning in opposite directions (or the robot is rotating)
-            if (drivetrain_left_side_speed < 0 and drivetrain_right_side_speed > 0) or (drivetrain_left_side_speed > 0 and drivetrain_right_side_speed < 0):
-                drivetrain_left = min(abs(drivetrain_left_side_speed), MAX_TURN_SPEED)
-                drivetrain_right = min(abs(drivetrain_right_side_speed), MAX_TURN_SPEED)
+            drivetrain_right_axis_value = min(abs(drivetrain_right_axis_value), velocity_right) * (-1 if drivetrain_right_axis_value < 0 else 1)
+            drivetrain_left_axis_value = min(abs(drivetrain_left_axis_value), velocity_left) * (-1 if drivetrain_left_axis_value < 0 else 1)
 
-                # Correct the signs of the velocity since we had to take the absolute value of the speed in order to use the min function
-                drivetrain_left_side_speed = drivetrain_left if drivetrain_left_side_speed > 0 else -drivetrain_left
-                drivetrain_right_side_speed = drivetrain_right if drivetrain_right_side_speed > 0 else -drivetrain_right
-            
             # check if the value is inside of the deadband range
             if drivetrain_left_axis_value < 5 and drivetrain_left_axis_value > -5:
-                velocity = 0 # Set velocity to zero so robot stops moving and/or is able to accelerate again 
                 # check if the left motor has already been stopped
                 if drivetrain_l_needs_to_be_stopped_controller_1:
+                    velocity_left = 0
                     # stop the left drive motor
                     left_drive_smart.stop()
                     # tell the code that the left motor has been stopped
@@ -121,9 +108,9 @@ def rc_auto_loop_function_controller_1():
                 drivetrain_l_needs_to_be_stopped_controller_1 = True
             # check if the value is inside of the deadband range
             if drivetrain_right_axis_value < 5 and drivetrain_right_axis_value > -5:
-                velocity = 0 # Set velocity to zero so robot stops moving and/or is able to accelerate again 
                 # check if the right motor has already been stopped
                 if drivetrain_r_needs_to_be_stopped_controller_1:
+                    velocity_right = 0
                     # stop the right drive motor
                     right_drive_smart.stop()
                     # tell the code that the right motor has been stopped
@@ -132,14 +119,14 @@ def rc_auto_loop_function_controller_1():
                 # reset the toggle so that the deadband code knows to stop the right motor next
                 # time the input is in the deadband range
                 drivetrain_r_needs_to_be_stopped_controller_1 = True
-            
+
             # only tell the left drive motor to spin if the values are not in the deadband range
             if drivetrain_l_needs_to_be_stopped_controller_1:
-                left_drive_smart.set_velocity(drivetrain_left_side_speed, PERCENT)
+                left_drive_smart.set_velocity(drivetrain_left_axis_value, PERCENT)
                 left_drive_smart.spin(FORWARD)
             # only tell the right drive motor to spin if the values are not in the deadband range
             if drivetrain_r_needs_to_be_stopped_controller_1:
-                right_drive_smart.set_velocity(drivetrain_right_side_speed, PERCENT)
+                right_drive_smart.set_velocity(drivetrain_right_axis_value, PERCENT)
                 right_drive_smart.spin(FORWARD)
             # check the buttonR1/buttonR2 status
             # to control lift
@@ -154,7 +141,6 @@ def rc_auto_loop_function_controller_1():
                 # set the toggle so that we don't constantly tell the motor to stop when
                 # the buttons are released
                 controller_1_right_scuff_control_motors_stopped = True
-            
 
 
         # wait before repeating the process
@@ -163,7 +149,7 @@ def rc_auto_loop_function_controller_1():
 # define variable for remote controller enable/disable
 remote_control_code_enabled = True
 
-rc_auto_loop_thread_controller_1 = Thread(rc_auto_loop_function_controller_1)
+# rc_auto_loop_thread_controller_1 = Thread(rc_auto_loop_function_controller_1)
 
 def driver_control():
     print("Control driver")
@@ -256,10 +242,10 @@ def screen():
     scr = controller_1.screen
     while True:
         # Gather all of the temperatures
-        RT_temp = mgR_motor_a.temperature()
-        RB_temp = mgR_motor_b.temperature()
-        LT_temp = mgL_motor_a.temperature()
-        LB_temp = mgL_motor_b.temperature()
+        RT_temp = mgR_motor_a.temperature(TemperatureUnits.FAHRENHEIT)
+        RB_temp = mgR_motor_b.temperature(TemperatureUnits.FAHRENHEIT)
+        LT_temp = mgL_motor_a.temperature(TemperatureUnits.FAHRENHEIT)
+        LB_temp = mgL_motor_b.temperature(TemperatureUnits.FAHRENHEIT)
 
         scr.clear_screen() # Make sure we aren't writing over anything
 
@@ -267,20 +253,29 @@ def screen():
         # I have no idea how many columns the controller has, so this may go off the
         # screen or be horribly uncentered. This uses about 20 characters per row.
         scr.set_cursor(1, 1)
-        scr.print("RT - " + str(RT_temp))
+        scr.print("LT - " + str(int(LT_temp)))
         scr.set_cursor(1, 10)
-        scr.print(" | LT - " + str(LT_temp))
+        scr.print(" | RT - " + str(int(RT_temp)))
         scr.set_cursor(2, 1)
-        scr.print("RB - " + str(RB_temp))
+        scr.print("LB - " + str(int(LB_temp)))
         scr.set_cursor(2, 10)
-        scr.print(" | LB - " + str(LB_temp))
+        scr.print(" | RB - " + str(int(RB_temp)))
 
-        time.sleep(5) # Update the motor temperatures on the screen only every five seconds
+        wait(2, SECONDS) # Update the motor temperatures on the screen only every five seconds
 
 
 pneum_clamp.set(True)
 drive_inertial.calibrate()
 
 temp_thread = Thread(screen)
+
+rotation.reset_position()
+
+while True:
+    print("Rotation sensor: ", rotation.position())
+    print("Motor: ", mgL_motor_b.position())
+
+    wait(3, SECONDS)
+
 
 comp = Competition(driver_control, min_auto)

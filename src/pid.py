@@ -9,10 +9,15 @@ mgL = MotorGroup(mgL_motor_a, mgL_motor_b)
 drivetrain = DriveTrain(mgL, mgR, 319.19, 330, 320, MM, 1)
 gps = Gps(Ports.PORT17, 6.0, 7.0, INCHES, 180)
 
+motors = [mgR_motor_a, mgR_motor_b, mgL_motor_a, mgL_motor_b]
+
+for motor in motors:
+    motor.reset_position()
+
 class Vector:
-    def __init__(self, x: int, y: int):
-        self.x: int = x
-        self.y: int = y
+    def __init__(self, x: float, y: float):
+        self.x: float = x
+        self.y: float = y
 
     def magnitude(self):
         # Calculate the magnitude of the vector. 
@@ -27,7 +32,7 @@ class Vector:
         return (((vec2.x - vec1.x) ** 2) + ((vec2.y - vec1.y)) ** 2) ** 0.5
     
     def __str__(self) -> str:
-        print("({}, {})".format(self.x, self.y))
+        return "({}, {})".format(self.x, self.y)
 
 def gps_pos():
     return Vector(gps.x_position(), gps.y_position())
@@ -70,8 +75,52 @@ class PIDwithGPS:
 
             wait(15, MSEC)
 
-pid = PIDwithGPS()
+class PIDwithRot:
+    GEAR_RATIO = 0.67
+    WHEEL_CIRC = 12.57
+    kP = 5
+    kI = 0
+    kD = 0
 
-pos = gps_pos()
-pid.drive(Vector(-1488.433, -288.3048))
-print(pos)
+    def drive_for(self, distance_in: int):
+        integral = 0
+        error = 0
+        prev_error = 0
+        derivative = 0
+        power = 0
+
+        while True:
+            error = distance_in - self.driven_dist()
+            integral += error
+            print(error)
+
+            if error == 0 or error < 1:
+                integral = 0
+            
+            if error > 1000:
+                integral = 0
+
+            derivative = error - prev_error
+            prev_error = error
+
+            power = (error * self.kP) + (integral * self.kI) + (derivative * self.kD)
+
+            drivetrain.drive(FORWARD, power, PERCENT)
+
+            wait(15, MSEC)
+
+    def driven_dist(self):
+        return (self.motor_rot_avg() / 360) * self.GEAR_RATIO * self.WHEEL_CIRC
+    
+    @staticmethod
+    def motor_rot_avg():
+        num = 0
+
+        for motor in motors:
+            num += motor.position()
+
+        return num / len(motors)
+
+
+pid = PIDwithRot()
+pid.drive_for(48)
