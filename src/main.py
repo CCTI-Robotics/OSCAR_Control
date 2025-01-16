@@ -15,12 +15,12 @@ mgL = MotorGroup(mgL_motor_a, mgL_motor_b)
 controller_1 = Controller(PRIMARY)
 left_drive_smart = mgL
 right_drive_smart = mgR
-drive_inertial = Inertial(Ports.PORT15)
+drive_inertial = Inertial(Ports.PORT18)
 drivetrain = SmartDrive(left_drive_smart, right_drive_smart, drive_inertial, 319.19, 330, 320, MM, 1)
 lift = Motor(Ports.PORT7, GearSetting.RATIO_18_1, True)
 pneum_clamp = DigitalOut(brain.three_wire_port.a)
 opt_rear = Optical(Ports.PORT5)
-rotation = Rotation(Ports.PORT18)
+# rotation = Rotation(Ports.PORT18)
 
 # wait for rotation sensor to fully initialize
 wait(30, MSEC)
@@ -149,7 +149,7 @@ def rc_auto_loop_function_controller_1():
 # define variable for remote controller enable/disable
 remote_control_code_enabled = True
 
-# rc_auto_loop_thread_controller_1 = Thread(rc_auto_loop_function_controller_1)
+rc_auto_loop_thread_controller_1 = Thread(rc_auto_loop_function_controller_1)
 
 def driver_control():
     print("Control driver")
@@ -198,45 +198,6 @@ def left_auto():
     drivetrain.turn_for(RIGHT, 42, DEGREES)
     #drivetrain.drive_for(FORWARD, 78, INCHES, 50, PERCENT)
 
-# Experimental Auto Selector
-
-# def auto_select():
-#     scr = controller_1.screen
-#     scr.clear_screen()
-    
-#     scr.print("A: Right Side")
-#     scr.print("X: Left Side")
-#     scr.print("UP: Min Auto")
-
-# is_left_auto = False
-# is_right_auto = False
-# is_min_auto = False
-
-# def select_left():
-#     global is_left_auto
-#     is_left_auto = True
-#     print("Left")
-
-# def select_right():
-#     global is_right_auto
-#     is_right_auto = True
-#     print("Right")
-
-# def select_min():
-#     global is_min_auto
-#     is_min_auto = True
-#     print("Min")
-
-# def auto():
-#     for config in [(is_min_auto, min_auto), (is_left_auto, left_auto), (is_right_auto, right_auto)]:
-#         if config[0]:
-#             config[1]()
-#             break 
-
-# controller_1.buttonA.pressed(select_right)
-# controller_1.buttonX.pressed(select_left)
-# controller_1.buttonUp.pressed(select_min)
-
 def screen():
     # Have the controller show the temperatures of the drivetrain motors, for some reason.
     scr = controller_1.screen
@@ -263,19 +224,26 @@ def screen():
 
         wait(2, SECONDS) # Update the motor temperatures on the screen only every five seconds
 
-
 pneum_clamp.set(True)
 drive_inertial.calibrate()
 
 temp_thread = Thread(screen)
 
-rotation.reset_position()
+# rotation.reset_position()
+drive_inertial.calibrate()
 
-while True:
-    print("Rotation sensor: ", rotation.position())
-    print("Motor: ", mgL_motor_b.position())
+def accel():
+    while drive_inertial.is_calibrating():
+        wait(5, MSEC)
 
-    wait(3, SECONDS)
+    while True:
 
+        acceler = drive_inertial.acceleration(AxisType.ZAXIS)
+        accel_ms = acceler * 9.8 # The force of gravity, since 1G = 9.8m/s
+        # print(accel_ms) # Convert meters to inches
+        print(accel_ms * 39.3701) # Convert meters to inches
+        wait(500, MSEC)
+
+accel_therad = Thread(accel)
 
 comp = Competition(driver_control, min_auto)
