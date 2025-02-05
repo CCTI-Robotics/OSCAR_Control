@@ -1,6 +1,7 @@
 #region VEXcode Generated Robot Configuration
 from vex import *
 import urandom
+import math
 
 # Brain should be defined by default
 brain=Brain()
@@ -59,10 +60,17 @@ def toggle_clamp():
 
 #Operates the Pneumatic clamp
 controller_1.buttonDown.pressed(toggle_clamp)
+lift.set_velocity(100, PERCENT)
+
+WHEEL_BASE = 13.5
+WHEEL_DIAMETER = 4
 
 MAX_TURN_SPEED = 55 # Percent
 MAX_SPEED = 100 # Percent
 ACCELERATION = 85 # Percent per second 
+GEAR_RATIO = 2 / 3 # Gear Ratio of the drivetrain
+WHEEL_CIRC = WHEEL_DIAMETER * math.pi # Circumference of the omni wheels
+
 
 # define a task that will handle monitoring inputs from controller_1
 def rc_auto_loop_function_controller_1():
@@ -154,49 +162,73 @@ rc_auto_loop_thread_controller_1 = Thread(rc_auto_loop_function_controller_1)
 def driver_control():
     print("Control driver")
 
+
+
+motors = [mgL_motor_a, mgL_motor_b, mgR_motor_a, mgR_motor_b]
+
+def motor_rot_avg():
+    # Get the average rotation of each motor, to get a 
+    # More accurate reading of far much we have gone
+    num = 0
+
+    for motor in motors:
+        num += abs(motor.position())
+
+    return num / len(motors)
+
+def reset_pos():
+    for motor in motors:
+        motor.reset_position()
+
+def driven_dist():
+    # Get the distance we have driven based on rotation
+    dist = (motor_rot_avg() / 360) * GEAR_RATIO * WHEEL_CIRC
+    return dist
+
+def drive_for_auto(direction, distance_in: float, velocity_percent: int, stop_type = BRAKE):
+    reset_pos()
+    wait(25, MSEC)
+    while driven_dist() < distance_in:
+        drivetrain.drive(direction, velocity_percent, PERCENT)
+    
+    drivetrain.stop(stop_type)
+
+def turn_for_auto(direction, distance_deg: int, velocity_percent: int):
+    reset_pos()
+
+    turn_radius = WHEEL_BASE / 2
+    turning_circumference = 2 * math.pi * turn_radius
+    turn_dist = (distance_deg / 360) * turning_circumference # The amount of inches the wheels need to travel to rotate that amount of degrees
+
+    while driven_dist() < turn_dist:
+        drivetrain.turn(direction, velocity_percent, PERCENT)
+
+    drivetrain.stop(BRAKE)
+
+
+def left_auto():
+    # Assuming the robot starts as far behind the line as possible
+    lift.spin(FORWARD, 100, PERCENT) # Start the intake
+
+    drive_for_auto(FORWARD, 36, 50) # Go 40 inches towards the rings
+    wait(250, MSEC)
+    lift.spin_for(FORWARD, 2000, units=MSEC, wait=False) # Collect the ring while we're moving
+
+    turn_for_auto(LEFT, 80, 10) # Turn 90 degrees to have the rear face a goal
+    wait(250, MSEC)
+
+    drive_for_auto(REVERSE, 16, 50, COAST) # Reverse into the mobile goal
+    toggle_clamp() # Hopefully clamp the mobile goal
+
+    lift.spin_for(FORWARD, 5, SECONDS, 100, PERCENT, wait=False) # Score the ring while we're moving
+
+    drive_for_auto(FORWARD, 16, 50)
+
+
+
 def no_auto():
     ... # Skip the autonomous period.
 
-def min_auto():
-    # Auto that only grabs a goal. 
-    # min_auto works in any quadrant. 
-
-    while not opt_rear.is_near_object():
-        drivetrain.drive(REVERSE, 45, PERCENT)
-
-    pneum_clamp.set(False)
-    wait(250, MSEC)
-    drivetrain.stop(BRAKE)
-
-def right_auto():
-    while drive_inertial.is_calibrating():
-        wait(100, MSEC)
-
-    min_auto() # Grab the goal 
-
-    drivetrain.turn_for(LEFT, 80, DEGREES, 10, PERCENT)
-    lift.spin(FORWARD, 75, PERCENT)
-    drivetrain.drive_for(FORWARD, 35, INCHES, 25, PERCENT)
-    drivetrain.turn_for(RIGHT, 100, DEGREES,10, PERCENT)
-    drivetrain.drive_for(FORWARD, 12, INCHES, 100, PERCENT)
-    drivetrain.drive_for(REVERSE, 12, INCHES, 50, PERCENT)
-    drivetrain.turn_for(RIGHT, 42, DEGREES)
-    #drivetrain.drive_for(FORWARD, 78, INCHES, 50, PERCENT)
-
-def left_auto():
-    while drive_inertial.is_calibrating():
-        wait(100, MSEC)
-
-    min_auto() # Grab the goal 
-
-    drivetrain.turn_for(RIGHT, 80, DEGREES, 10, PERCENT)
-    lift.spin(FORWARD, 75, PERCENT)
-    drivetrain.drive_for(FORWARD, 35, INCHES, 25, PERCENT)
-    drivetrain.turn_for(LEFT, 100, DEGREES,10, PERCENT)
-    drivetrain.drive_for(FORWARD, 12, INCHES, 100, PERCENT)
-    drivetrain.drive_for(REVERSE, 12, INCHES, 50, PERCENT)
-    drivetrain.turn_for(RIGHT, 42, DEGREES)
-    #drivetrain.drive_for(FORWARD, 78, INCHES, 50, PERCENT)
 
 def screen():
     # Have the controller show the temperatures of the drivetrain motors, for some reason.
@@ -232,18 +264,4 @@ temp_thread = Thread(screen)
 # rotation.reset_position()
 drive_inertial.calibrate()
 
-def accel():
-    while drive_inertial.is_calibrating():
-        wait(5, MSEC)
-
-    while True:
-
-        acceler = drive_inertial.acceleration(AxisType.ZAXIS)
-        accel_ms = acceler * 9.8 # The force of gravity, since 1G = 9.8m/s
-        # print(accel_ms) # Convert meters to inches
-        print(accel_ms * 39.3701) # Convert meters to inches
-        wait(500, MSEC)
-
-accel_therad = Thread(accel)
-
-comp = Competition(driver_control, min_auto)
+comp = Competition(driver_control, left_auto)
