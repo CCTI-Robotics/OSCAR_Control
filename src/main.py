@@ -153,6 +153,7 @@ remote_control_thread = Thread(remote_control_loop)
 
 def driver_control():
     temp_thread = Thread(screen)
+    optical.set_light(0)
     print("Control driver")
 
 def motor_rot_avg():
@@ -204,29 +205,66 @@ class Auto:
 
         drivetrain.stop(BRAKE)
 
-    def left_auto(self):
-        # Assuming the robot starts as far behind the line as possible
-        # lift.spin_for(FORWARD, 500, MSEC) # intake the preload
+    def auto_min(self):
+        """
+        Description:
+        min_auto only goes forward until it grabs a goal.
+        Useful to get off of the starting line
+        This is also useful in regular auto processes so we don't have to 
+        repeat the same code. Reusability!
 
-        threaded_spin(lift, 1500, MSEC)
+        Criteria:
+        - Any side of field
+        - Must have a direct, straight path to a goal
+        - Must be facing backwards (intake towards wall)
+        """
+        reset_pos()
+        
+        # Drive until the optical sensor on the back of the robot detects
+        # a goal or until we have driven 48 inches.
+        # This is a failsafe in case the sensor or process malfunctions
+        # to make sure we don't go over the line and get DQ'd
+        while not optical.is_near_object() and driven_dist() < 48:
+            drivetrain.drive(REVERSE, 45, PERCENT)
+
+        clamp.set(False)
+        wait(250, MSEC)
+        drivetrain.stop(BRAKE)
+
+    def auto_nostakeside(self, color):
+        """
+        An auto that works on the opposite side of the field of the High Stake. This 
+        auto will, with a preload, grab another ring (be in possession of two), get a 
+        mobile goal, and (attempt) to score both rings on the mobile goal.
+
+        Criteria:
+        - Left side of either team
+        - Must be facing a double stack of rings
+            - would theoretically work with a single ring as well
+        - Must be facing forward (clamp toward wall)
+        """
+
+        threaded_spin(lift, 1500, MSEC) # Spin the intake while we move toward the field ring
         self.drive_for_auto(FORWARD, 36, 50) # Go 40 inches towards the rings
-        wait(250, MSEC)
-        # lift.spin_for(FORWARD, 1, SECONDS) # Collect the ring while we're moving
+        wait(250, MSEC) # Wait a small amount of time to make sure the bot is settled
 
-        self.turn_for_auto(LEFT, 80, 10) # Turn 90 degrees to have the rear face a goal
-        wait(250, MSEC)
+        if color == Color.RED:
+            self.turn_for_auto(LEFT, 80, 10) # Turn 90 degrees to have the rear face a goal
+        else:
+            self.turn_for_auto(RIGHT, 80, 10) 
+        wait(250, MSEC) # Let the bot rest
 
-        self.drive_for_auto(REVERSE, 16, 10, COAST) # Reverse into the mobile goal
-        toggle_clamp() # Hopefully clamp the mobile goal
-        self.drive_for_auto(REVERSE, 6, 10, COAST) # Hopefully this makes it keep going 
+        self.auto_min() # Go backward until we get the mobile goal
 
         lift.spin_for(FORWARD, 5, SECONDS) # Score the rings while we're moving
 
-        # self.drive_for_auto(FORWARD, 16, 50)
+    def auto_direct_score(self):
+        self.auto_min()
 
-    def dummy_auto(self):
-        # Just drive off the line. 
-        self.drive_for_auto(FORWARD, 6, 50)
+        lift.spin_for(FORWARD, 5, SECONDS)
+
+    def no_auto():
+        ...
 
 def screen():
     # Have the controller show the temperatures of the drivetrain motors, for some reason.
@@ -255,4 +293,6 @@ def screen():
         wait(5, SECONDS) # Update the motor temperatures on the screen only every five seconds
 
 clamp.set(True) # So the clamp is up when the game starts
-comp = Competition(driver_control, Auto().dummy_auto)
+optical.set_light(100)
+optical.object_detect_threshold(95)
+comp = Competition(driver_control, lambda: Auto().auto_nostakeside(Color.BLUE))
