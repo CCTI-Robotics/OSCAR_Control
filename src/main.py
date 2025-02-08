@@ -1,45 +1,24 @@
-#region VEXcode Generated Robot Configuration
 from vex import *
-import urandom
 import math
 
 # Brain should be defined by default
 brain=Brain()
 
 # Robot configuration code
-mgR_motor_a = Motor(Ports.PORT1, GearSetting.RATIO_6_1, True)
-mgR_motor_b = Motor(Ports.PORT2, GearSetting.RATIO_6_1, False)
-mgR = MotorGroup(mgR_motor_a, mgR_motor_b)
-mgL_motor_a = Motor(Ports.PORT11, GearSetting.RATIO_6_1, False)
-mgL_motor_b = Motor(Ports.PORT12, GearSetting.RATIO_6_1, True)
-mgL = MotorGroup(mgL_motor_a, mgL_motor_b)
-controller_1 = Controller(PRIMARY)
-left_drive_smart = mgL
-right_drive_smart = mgR
-drive_inertial = Inertial(Ports.PORT18)
-drivetrain = SmartDrive(left_drive_smart, right_drive_smart, drive_inertial, 319.19, 330, 320, MM, 1)
+mgR_top = Motor(Ports.PORT1, GearSetting.RATIO_6_1, True)
+mgR_bottom = Motor(Ports.PORT2, GearSetting.RATIO_6_1, False)
+mgR = MotorGroup(mgR_top, mgR_bottom)
+mgL_top = Motor(Ports.PORT11, GearSetting.RATIO_6_1, False)
+mgL_bottom = Motor(Ports.PORT12, GearSetting.RATIO_6_1, True)
+mgL = MotorGroup(mgL_top, mgL_bottom)
+controller = Controller(PRIMARY)
+inertial = Inertial(Ports.PORT18)
+drivetrain = SmartDrive(mgL, mgR, inertial, 319.19, 330, 320, MM, 1)
 lift = Motor(Ports.PORT7, GearSetting.RATIO_18_1, True)
-pneum_clamp = DigitalOut(brain.three_wire_port.a)
-opt_rear = Optical(Ports.PORT5)
-# rotation = Rotation(Ports.PORT18)
+clamp = DigitalOut(brain.three_wire_port.a)
+optical = Optical(Ports.PORT5)
 
-# wait for rotation sensor to fully initialize
-wait(30, MSEC)
-
-# Make random actually random
-def initializeRandomSeed():
-    wait(100, MSEC)
-    random = brain.battery.voltage(MV) + brain.battery.current(CurrentUnits.AMP) * 100 + brain.timer.system_high_res()
-    urandom.seed(int(random))
-      
-# Set random seed 
-initializeRandomSeed()
-
-def play_vexcode_sound(sound_name):
-    # Helper to make playing sounds from the V5 in VEXcode easier and
-    # keeps the code cleaner by making it clear what is happening.
-    print("VEXPlaySound:" + sound_name)
-    wait(5, MSEC)
+motors = [mgL_top, mgL_bottom, mgR_top, mgR_bottom]
 
 # add a small delay to make sure we don't print in the middle of the REPL header
 wait(200, MSEC)
@@ -47,23 +26,32 @@ wait(200, MSEC)
 print("\033[2J")
 
 # define variables used for controlling motors based on controller inputs
-controller_1_right_scuff_control_motors_stopped = True
-drivetrain_l_needs_to_be_stopped_controller_1 = False
-drivetrain_r_needs_to_be_stopped_controller_1 = False
+lift_stopped = True
+lift_toggled = False
+drive_l_must_stop = False
+drive_r_must_stop = False
 
 #Event to be called when button is pressed: Toggles the digital out for the Pneumatic clamp
 def toggle_clamp():
-    if pneum_clamp.value():
-        pneum_clamp.set(False)
-    else:
-        pneum_clamp.set(True)
+    clamp.set(not clamp.value())
 
-#Operates the Pneumatic clamp
-controller_1.buttonDown.pressed(toggle_clamp)
+def toggle_lift():
+    global lift_toggled
+    lift_toggled = not lift_toggled
+
+# Register the functions to toggle components
+controller.buttonDown.pressed(toggle_clamp) 
+controller.buttonRight.pressed(toggle_lift)
+
+# Configure the lift
 lift.set_velocity(100, PERCENT)
+lift.set_stopping(COAST)
 
-WHEEL_BASE = 13.5
-WHEEL_DIAMETER = 4
+# Constants are a type of variable that don't change, or are always constant
+# It's easier to know what's going on when there are words rather than the same
+# numbre all over the place.
+WHEEL_BASE = 13.5 # Inches
+WHEEL_DIAMETER = 4 # Inches
 
 MAX_TURN_SPEED = 55 # Percent
 MAX_SPEED = 100 # Percent
@@ -71,10 +59,9 @@ ACCELERATION = 85 # Percent per second
 GEAR_RATIO = 2 / 3 # Gear Ratio of the drivetrain
 WHEEL_CIRC = WHEEL_DIAMETER * math.pi # Circumference of the omni wheels
 
-
 # define a task that will handle monitoring inputs from controller_1
-def rc_auto_loop_function_controller_1():
-    global drivetrain_l_needs_to_be_stopped_controller_1, drivetrain_r_needs_to_be_stopped_controller_1, controller_1_right_scuff_control_motors_stopped, remote_control_code_enabled
+def remote_control_loop():
+    global drive_l_must_stop, drive_r_must_stop, lift_stopped, lift_toggled, remote_control_code_enabled
     global last_time, delta, velocity_left, velocity_right
     # process the controller input every 20 milliseconds
     # update the motors based on the input values
@@ -88,12 +75,11 @@ def rc_auto_loop_function_controller_1():
         last_time = brain.timer.time(SECONDS)
 
         if remote_control_code_enabled:
-            
             # calculate the drivetrain motor velocities from the controller joystick axies
             # left = axis3 + axis1
             # right = axis3 - axis1
-            drivetrain_left_axis_value = controller_1.axis3.position() + controller_1.axis1.position()
-            drivetrain_right_axis_value = controller_1.axis3.position() - controller_1.axis1.position()
+            drivetrain_left_axis_value = controller.axis3.position() + controller.axis1.position()
+            drivetrain_right_axis_value = controller.axis3.position() - controller.axis1.position()
 
             velocity_left += ACCELERATION * delta
             velocity_right += ACCELERATION * delta
@@ -104,67 +90,70 @@ def rc_auto_loop_function_controller_1():
             # check if the value is inside of the deadband range
             if drivetrain_left_axis_value < 5 and drivetrain_left_axis_value > -5:
                 # check if the left motor has already been stopped
-                if drivetrain_l_needs_to_be_stopped_controller_1:
+                if drive_l_must_stop:
                     velocity_left = 0
                     # stop the left drive motor
-                    left_drive_smart.stop()
+                    mgL.stop()
                     # tell the code that the left motor has been stopped
-                    drivetrain_l_needs_to_be_stopped_controller_1 = False
+                    drive_l_must_stop = False
             else:
                 # reset the toggle so that the deadband code knows to stop the left motor next
                 # time the input is in the deadband range
-                drivetrain_l_needs_to_be_stopped_controller_1 = True
+                drive_l_must_stop = True
             # check if the value is inside of the deadband range
             if drivetrain_right_axis_value < 5 and drivetrain_right_axis_value > -5:
                 # check if the right motor has already been stopped
-                if drivetrain_r_needs_to_be_stopped_controller_1:
+                if drive_r_must_stop:
                     velocity_right = 0
                     # stop the right drive motor
-                    right_drive_smart.stop()
+                    mgR.stop()
                     # tell the code that the right motor has been stopped
-                    drivetrain_r_needs_to_be_stopped_controller_1 = False
+                    drive_r_must_stop = False
             else:
                 # reset the toggle so that the deadband code knows to stop the right motor next
                 # time the input is in the deadband range
-                drivetrain_r_needs_to_be_stopped_controller_1 = True
+                drive_r_must_stop = True
 
             # only tell the left drive motor to spin if the values are not in the deadband range
-            if drivetrain_l_needs_to_be_stopped_controller_1:
-                left_drive_smart.set_velocity(drivetrain_left_axis_value, PERCENT)
-                left_drive_smart.spin(FORWARD)
+            if drive_l_must_stop:
+                mgL.set_velocity(drivetrain_left_axis_value, PERCENT)
+                mgL.spin(FORWARD)
             # only tell the right drive motor to spin if the values are not in the deadband range
-            if drivetrain_r_needs_to_be_stopped_controller_1:
-                right_drive_smart.set_velocity(drivetrain_right_axis_value, PERCENT)
-                right_drive_smart.spin(FORWARD)
-            # check the buttonR1/buttonR2 status
-            # to control lift
-            if controller_1.buttonY.pressing():
-                lift.spin(FORWARD, 100, PERCENT)
-                controller_1_right_scuff_control_motors_stopped = False
-            elif controller_1.buttonB.pressing():
-                lift.spin(REVERSE, 100, PERCENT)
-                controller_1_right_scuff_control_motors_stopped = False
-            elif not controller_1_right_scuff_control_motors_stopped:
+            if drive_r_must_stop:
+                mgR.set_velocity(drivetrain_right_axis_value, PERCENT)
+                mgR.spin(FORWARD)
+
+            # When the lift is toggled via the right button with toggle_lift,
+            # the lift will constantly go. If the lift is manually triggered to 
+            # go forward or backward, it will untoggle the lift and switch back
+            # to manual mode. 
+            if controller.buttonY.pressing():
+                lift.spin(FORWARD)
+                lift_stopped = False
+                lift_toggled = False
+            elif controller.buttonB.pressing():
+                lift.spin(REVERSE)
+                lift_stopped = False
+                lift_toggled = False
+            elif lift_toggled:
+                lift.spin(FORWARD)
+                lift_stopped = False
+            elif not lift_stopped:
                 lift.stop()
                 # set the toggle so that we don't constantly tell the motor to stop when
                 # the buttons are released
-                controller_1_right_scuff_control_motors_stopped = True
-
+                lift_stopped = True
 
         # wait before repeating the process
         wait(20, MSEC)
 
 # define variable for remote controller enable/disable
 remote_control_code_enabled = True
-
-rc_auto_loop_thread_controller_1 = Thread(rc_auto_loop_function_controller_1)
+remote_control_thread = Thread(remote_control_loop)
 
 def driver_control():
+    temp_thread = Thread(screen)
     print("Control driver")
-
-
-
-motors = [mgL_motor_a, mgL_motor_b, mgR_motor_a, mgR_motor_b]
 
 def motor_rot_avg():
     # Get the average rotation of each motor, to get a 
@@ -185,60 +174,69 @@ def driven_dist():
     dist = (motor_rot_avg() / 360) * GEAR_RATIO * WHEEL_CIRC
     return dist
 
-def drive_for_auto(direction, distance_in: float, velocity_percent: int, stop_type = BRAKE):
-    reset_pos()
-    wait(25, MSEC)
-    while driven_dist() < distance_in:
-        drivetrain.drive(direction, velocity_percent, PERCENT)
-    
-    drivetrain.stop(stop_type)
+def threaded_spin(motor, *args):
+    Thread(motor.spin_for, args)
 
-def turn_for_auto(direction, distance_deg: int, velocity_percent: int):
-    reset_pos()
+class Auto:
+    """
+    This auto class is used for organization purposes. It makes sure programmers don't use 
+    the drive_for and turn_for auto functions unless they know what they're doing.
+    """
+    @staticmethod
+    def drive_for_auto(direction, distance_in: float, velocity_percent: int, stop_type = BRAKE):
+        reset_pos()
+        wait(25, MSEC)
+        while driven_dist() < distance_in:
+            drivetrain.drive(direction, velocity_percent, PERCENT)
+        
+        drivetrain.stop(stop_type)
 
-    turn_radius = WHEEL_BASE / 2
-    turning_circumference = 2 * math.pi * turn_radius
-    turn_dist = (distance_deg / 360) * turning_circumference # The amount of inches the wheels need to travel to rotate that amount of degrees
+    @staticmethod
+    def turn_for_auto(direction, distance_deg: int, velocity_percent: int):
+        reset_pos()
 
-    while driven_dist() < turn_dist:
-        drivetrain.turn(direction, velocity_percent, PERCENT)
+        turn_radius = WHEEL_BASE / 2
+        turning_circumference = 2 * math.pi * turn_radius
+        turn_dist = (distance_deg / 360) * turning_circumference # The amount of inches the wheels need to travel to rotate that amount of degrees
 
-    drivetrain.stop(BRAKE)
+        while driven_dist() < turn_dist:
+            drivetrain.turn(direction, velocity_percent, PERCENT)
 
+        drivetrain.stop(BRAKE)
 
-def left_auto():
-    # Assuming the robot starts as far behind the line as possible
-    lift.spin(FORWARD, 100, PERCENT) # Start the intake
+    def left_auto(self):
+        # Assuming the robot starts as far behind the line as possible
+        # lift.spin_for(FORWARD, 500, MSEC) # intake the preload
 
-    drive_for_auto(FORWARD, 36, 50) # Go 40 inches towards the rings
-    wait(250, MSEC)
-    lift.spin_for(FORWARD, 2000, units=MSEC, wait=False) # Collect the ring while we're moving
+        threaded_spin(lift, 1500, MSEC)
+        self.drive_for_auto(FORWARD, 36, 50) # Go 40 inches towards the rings
+        wait(250, MSEC)
+        # lift.spin_for(FORWARD, 1, SECONDS) # Collect the ring while we're moving
 
-    turn_for_auto(LEFT, 80, 10) # Turn 90 degrees to have the rear face a goal
-    wait(250, MSEC)
+        self.turn_for_auto(LEFT, 80, 10) # Turn 90 degrees to have the rear face a goal
+        wait(250, MSEC)
 
-    drive_for_auto(REVERSE, 16, 50, COAST) # Reverse into the mobile goal
-    toggle_clamp() # Hopefully clamp the mobile goal
+        self.drive_for_auto(REVERSE, 16, 10, COAST) # Reverse into the mobile goal
+        toggle_clamp() # Hopefully clamp the mobile goal
+        self.drive_for_auto(REVERSE, 6, 10, COAST) # Hopefully this makes it keep going 
 
-    lift.spin_for(FORWARD, 5, SECONDS, 100, PERCENT, wait=False) # Score the ring while we're moving
+        lift.spin_for(FORWARD, 5, SECONDS) # Score the rings while we're moving
 
-    drive_for_auto(FORWARD, 16, 50)
+        # self.drive_for_auto(FORWARD, 16, 50)
 
-
-
-def no_auto():
-    ... # Skip the autonomous period.
-
+    def dummy_auto(self):
+        # Just drive off the line. 
+        self.drive_for_auto(FORWARD, 6, 50)
 
 def screen():
     # Have the controller show the temperatures of the drivetrain motors, for some reason.
-    scr = controller_1.screen
+    scr = controller.screen
     while True:
         # Gather all of the temperatures
-        RT_temp = mgR_motor_a.temperature(TemperatureUnits.FAHRENHEIT)
-        RB_temp = mgR_motor_b.temperature(TemperatureUnits.FAHRENHEIT)
-        LT_temp = mgL_motor_a.temperature(TemperatureUnits.FAHRENHEIT)
-        LB_temp = mgL_motor_b.temperature(TemperatureUnits.FAHRENHEIT)
+        RT_temp = mgR_top.temperature(TemperatureUnits.FAHRENHEIT)
+        RB_temp = mgR_bottom.temperature(TemperatureUnits.FAHRENHEIT)
+        LT_temp = mgL_top.temperature(TemperatureUnits.FAHRENHEIT)
+        LB_temp = mgL_bottom.temperature(TemperatureUnits.FAHRENHEIT)
 
         scr.clear_screen() # Make sure we aren't writing over anything
 
@@ -254,14 +252,7 @@ def screen():
         scr.set_cursor(2, 10)
         scr.print(" | RB - " + str(int(RB_temp)))
 
-        wait(2, SECONDS) # Update the motor temperatures on the screen only every five seconds
+        wait(5, SECONDS) # Update the motor temperatures on the screen only every five seconds
 
-pneum_clamp.set(True)
-drive_inertial.calibrate()
-
-temp_thread = Thread(screen)
-
-# rotation.reset_position()
-drive_inertial.calibrate()
-
-comp = Competition(driver_control, left_auto)
+clamp.set(True) # So the clamp is up when the game starts
+comp = Competition(driver_control, Auto().dummy_auto)

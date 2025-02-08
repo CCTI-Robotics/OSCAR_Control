@@ -4,12 +4,12 @@
 		"json": 2
 	},
 	"project": {
-		"name": "ROTPID_test",
+		"name": "NO_AUTO",
 		"description": "",
 		"creationDate": "Thu, 12 Dec 2024 16:13:15 GMT",
 		"platform": "V5",
 		"language": "python",
-		"slot": 8,
+		"slot": 2,
 		"sdkVersion": "V5_1_0_1_25",
 		"python": {
 			"main": "src/main.py"
