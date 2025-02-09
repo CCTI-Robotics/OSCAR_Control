@@ -150,6 +150,7 @@ def remote_control_loop():
 # define variable for remote controller enable/disable
 remote_control_code_enabled = True
 remote_control_thread = Thread(remote_control_loop)
+competition = None
 
 def driver_control():
     temp_thread = Thread(screen)
@@ -175,7 +176,7 @@ def driven_dist():
     dist = (motor_rot_avg() / 360) * GEAR_RATIO * WHEEL_CIRC
     return dist
 
-def threaded_spin(motor, *args):
+def threaded_spin(motor: Motor, *args):
     Thread(motor.spin_for, args)
 
 class Auto:
@@ -183,8 +184,22 @@ class Auto:
     This auto class is used for organization purposes. It makes sure programmers don't use 
     the drive_for and turn_for auto functions unless they know what they're doing.
     """
+    def __init__(self):
+        self.available_autos = [
+            ("Red Minus", lambda: self.auto_minus(Color.RED)),
+            ("Blue Minus", lambda: self.auto_minus(Color.BLUE)),
+            ("Minumum", self.auto_min()),
+            ("Minimum Score", self.auto_direct_score()),
+            ("Blank", lambda: ...)
+        ] # A list of tuples that contain a name for the auto and the method itself
+        self.selected_auto = 2 # Index of available_autos
+
     @staticmethod
     def drive_for_auto(direction, distance_in: float, velocity_percent: int, stop_type = BRAKE):
+        """
+        Drive a certain distance. This algorithm uses the amount of rotations the motors
+        to check if the bot has driven a certain distance.
+        """
         reset_pos()
         wait(25, MSEC)
         while driven_dist() < distance_in:
@@ -194,9 +209,13 @@ class Auto:
 
     @staticmethod
     def turn_for_auto(direction, distance_deg: int, velocity_percent: int):
-        reset_pos()
+        """
+        Autonomously turn a certain amount. This algorithm uses the rotations of the
+        motor to dictate how far the robot has rotated. Seems to be decently innacurate.
+        """
+        reset_pos() # Make sure the position readings are fresh
 
-        turn_radius = WHEEL_BASE / 2
+        turn_radius = WHEEL_BASE / 2 
         turning_circumference = 2 * math.pi * turn_radius
         turn_dist = (distance_deg / 360) * turning_circumference # The amount of inches the wheels need to travel to rotate that amount of degrees
 
@@ -231,7 +250,7 @@ class Auto:
         wait(250, MSEC)
         drivetrain.stop(BRAKE)
 
-    def auto_nostakeside(self, color):
+    def auto_minus(self, color):
         """
         An auto that works on the opposite side of the field of the High Stake. This 
         auto will, with a preload, grab another ring (be in possession of two), get a 
@@ -252,19 +271,70 @@ class Auto:
             self.turn_for_auto(LEFT, 80, 10) # Turn 90 degrees to have the rear face a goal
         else:
             self.turn_for_auto(RIGHT, 80, 10) 
+             
         wait(250, MSEC) # Let the bot rest
 
         self.auto_min() # Go backward until we get the mobile goal
 
         lift.spin_for(FORWARD, 5, SECONDS) # Score the rings while we're moving
 
+        # We can also go a little further to make sure we're touching the middle ladder
+        # This would consist of probably facing backwards so our mobile goal doesn't get
+        # In the way, then running forward into a latter post. 
+
     def auto_direct_score(self):
         self.auto_min()
 
         lift.spin_for(FORWARD, 5, SECONDS)
 
-    def no_auto():
-        ...
+    def selector(self):
+        """
+        Autonomous selector allows the controller user to select which auto they are
+        going to use
+        """
+
+        scr = controller.screen # A shortcut so we don't have to type it out each time
+        screen_should_be_refreshed = True # To avoid unnecessary screen refreshes
+
+        def print_selected():
+            """
+            Print which auto is selected on the screen
+            """
+            scr.clear_screen()
+
+            scr.print("> " + self.available_autos[self.selected_auto][0])
+            scr.new_line()
+            scr.print("(A) to confirm")
+            scr.new_line()
+            scr.print("(DOWN) to switch")
+
+
+        while True:
+            if screen_should_be_refreshed:
+                print_selected()
+                screen_should_be_refreshed = False
+
+            if controller.buttonA.pressing():
+                scr.clear_screen()
+
+                scr.print("Selected auto: " + self.available_autos[self.selected_auto][0])
+                scr.new_line()
+                scr.print("Ready to go! GHLF :)")
+
+                global competition
+                competition = Competition(driver_control, self.available_autos[self.selected_auto][1])
+                break
+            
+            elif controller.buttonDown.pressing():
+                self.selected_auto += 1
+
+                if self.selected_auto >= len(self.available_autos):
+                    self.selected_auto = 0
+                
+                screen_should_be_refreshed = True
+
+            wait(250, MSEC)
+
 
 def screen():
     # Have the controller show the temperatures of the drivetrain motors, for some reason.
@@ -295,4 +365,5 @@ def screen():
 clamp.set(True) # So the clamp is up when the game starts
 optical.set_light(100)
 optical.object_detect_threshold(95)
-comp = Competition(driver_control, lambda: Auto().auto_nostakeside(Color.BLUE))
+
+Auto().selector()
