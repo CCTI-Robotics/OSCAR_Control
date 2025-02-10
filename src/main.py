@@ -39,7 +39,6 @@ def toggle_lift():
     global lift_toggled
     lift_toggled = not lift_toggled
 
-# Register the functions to toggle components
 controller.buttonDown.pressed(toggle_clamp) 
 controller.buttonRight.pressed(toggle_lift)
 
@@ -153,6 +152,8 @@ remote_control_thread = Thread(remote_control_loop)
 competition = None
 
 def driver_control():
+    # Register the functions to toggle components   
+
     temp_thread = Thread(screen)
     optical.set_light(0)
     print("Control driver")
@@ -188,8 +189,8 @@ class Auto:
         self.available_autos = [
             ("Red Minus", lambda: self.auto_minus(Color.RED)),
             ("Blue Minus", lambda: self.auto_minus(Color.BLUE)),
-            ("Minumum", self.auto_min()),
-            ("Minimum Score", self.auto_direct_score()),
+            ("Min", lambda: self.auto_min()),
+            ("Min + Score", lambda: self.auto_direct_score()),
             ("Blank", lambda: ...)
         ] # A list of tuples that contain a name for the auto and the method itself
         self.selected_auto = 2 # Index of available_autos
@@ -292,49 +293,65 @@ class Auto:
         Autonomous selector allows the controller user to select which auto they are
         going to use
         """
+        global screen_should_be_refreshed, confirmed
 
-        scr = controller.screen # A shortcut so we don't have to type it out each time
+        scr = brain.screen # A shortcut so we don't have to type it out each time
         screen_should_be_refreshed = True # To avoid unnecessary screen refreshes
+        confirmed = False
 
         def print_selected():
             """
             Print which auto is selected on the screen
             """
             scr.clear_screen()
-
+            scr.set_cursor(1, 0)
             scr.print("> " + self.available_autos[self.selected_auto][0])
             scr.new_line()
-            scr.print("(A) to confirm")
+            scr.print("(GREEN) to confirm")
             scr.new_line()
-            scr.print("(DOWN) to switch")
+            scr.print("(RED) to switch")
 
+            scr.draw_rectangle(10, 111, 225, 111, color=Color.RED)
+            scr.draw_rectangle(245, 111, 225, 111, color=Color.GREEN)
 
-        while True:
-            if screen_should_be_refreshed:
-                print_selected()
-                screen_should_be_refreshed = False
+        def screen_press():
+            touch_coords = (scr.x_position(), scr.y_position())
 
-            if controller.buttonA.pressing():
+            if touch_coords[1] < 111:
+                return
+
+            if touch_coords[0] < 225:
+                self.selected_auto += 1
+
+                if self.selected_auto >= len(self.available_autos):
+                    self.selected_auto = 0
+                
+                global screen_should_be_refreshed
+                screen_should_be_refreshed = True
+
+            elif touch_coords[0] > 245:
                 scr.clear_screen()
 
+                scr.set_cursor(3, 0)
                 scr.print("Selected auto: " + self.available_autos[self.selected_auto][0])
                 scr.new_line()
                 scr.print("Ready to go! GHLF :)")
 
                 global competition
                 competition = Competition(driver_control, self.available_autos[self.selected_auto][1])
-                break
             
-            elif controller.buttonDown.pressing():
-                self.selected_auto += 1
+        brain.screen.pressed(screen_press)
 
-                if self.selected_auto >= len(self.available_autos):
-                    self.selected_auto = 0
-                
-                screen_should_be_refreshed = True
+        while not confirmed:
+            if screen_should_be_refreshed:
+                print_selected()
+                global screen_should_be_refreshed
+                screen_should_be_refreshed = False
 
             wait(250, MSEC)
 
+    def run(self):
+        self.available_autos[self.selected_auto][1]
 
 def screen():
     # Have the controller show the temperatures of the drivetrain motors, for some reason.
@@ -366,4 +383,7 @@ clamp.set(True) # So the clamp is up when the game starts
 optical.set_light(100)
 optical.object_detect_threshold(95)
 
-Auto().selector()
+auto = Auto()
+auto.selector()
+
+competition = Competition(driver_control, auto.run)
