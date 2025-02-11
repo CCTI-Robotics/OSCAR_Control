@@ -31,20 +31,29 @@ lift_toggled = False
 drive_l_must_stop = False
 drive_r_must_stop = False
 
-#Event to be called when button is pressed: Toggles the digital out for the Pneumatic clamp
 def toggle_clamp():
+    """
+    An event to be called when the Down button is pressed
+    to toggle the pneumatic clamp.
+    """
     clamp.set(not clamp.value())
 
 def toggle_lift():
+    """
+    An event to be called when the Right button is pressed to 
+    toggle the lift. The lift will be automatically disabled
+    when a manual control is pressed. See remote_control_loop()
+    """
     global lift_toggled
     lift_toggled = not lift_toggled
 
+# Register the events to be pressed
 controller.buttonDown.pressed(toggle_clamp) 
 controller.buttonRight.pressed(toggle_lift)
 
 # Configure the lift
 lift.set_velocity(100, PERCENT)
-lift.set_stopping(COAST)
+lift.set_stopping(COAST) # I'm not sure if this actually changes anything
 
 # Constants are a type of variable that don't change, or are always constant
 # It's easier to know what's going on when there are words rather than the same
@@ -58,37 +67,73 @@ ACCELERATION = 85 # Percent per second
 GEAR_RATIO = 2 / 3 # Gear Ratio of the drivetrain
 WHEEL_CIRC = WHEEL_DIAMETER * math.pi # Circumference of the omni wheels
 
-# define a task that will handle monitoring inputs from controller_1
 def remote_control_loop():
+    """
+    Monitors inputs from the controller in order to control the robot. 
+    This is mostly for the drivetrain, since other controls are handled by on_pressed
+    """
+    # Everything is global so they are set outside of the current function instead of just being 
+    # redefined here
     global drive_l_must_stop, drive_r_must_stop, lift_stopped, lift_toggled, remote_control_code_enabled
     global last_time, delta, velocity_left, velocity_right
-    # process the controller input every 20 milliseconds
-    # update the motors based on the input values
-    last_time = brain.timer.time(SECONDS)
-    delta = 0
+
+    # Define variables to be used only in this method
+    last_time = brain.timer.time(SECONDS) # The last time of the loop to calculate delta
+    delta = 0 # Time since the last loop
+    # Velocities, in percent, for each side of the drivetrain
     velocity_left = 0
     velocity_right = 0
 
+    # Usually, a `while True` loop would block anything else from happening. Fortunately, this
+    # method is supposed to run in a thread, which means it runs in `parallel` aside the main process
     while True:
-        delta = brain.timer.time(SECONDS) - last_time
-        last_time = brain.timer.time(SECONDS)
+        delta = brain.timer.time(SECONDS) - last_time # Delta is current_time - last_time
+        last_time = brain.timer.time(SECONDS) # Set last time again
 
         if remote_control_code_enabled:
-            # calculate the drivetrain motor velocities from the controller joystick axies
+            # Calculate the drivetrain motor velocities from the controller joystick axes
             # left = axis3 + axis1
             # right = axis3 - axis1
             drivetrain_left_axis_value = controller.axis3.position() + controller.axis1.position()
             drivetrain_right_axis_value = controller.axis3.position() - controller.axis1.position()
 
+            # The calculated velocity is the acceleration (%/s) times delta
+            # This means, since %/s is percent per second, a delta of one second
+            # would accelerate the drivetrain %. This makes sure acceleration is
+            # constant, so if delta is less than a second it still accelerates 
+            # at the same rate. 
             velocity_left += ACCELERATION * delta
             velocity_right += ACCELERATION * delta
 
+            # This uses a lot of inline methods and conditions. Let's break it down.
+            # min() is a method that takes the smaller of x values. min(1, 2) = 1
+            # abs() is the absolute value of a number. abs(-1) = 1
+            # `x if z else y` is an inline condition, which is equivalent to a function containing the following:
+            # if z:
+            #     return x
+            # else:
+            #     return y
+            # We use abs() on the controller axis value because we don't care about the direction of the force,
+            # just the set velocity. We then take what's smaller, the velocity the robot wants to go, or the velocity
+            # calculated by the script (using our acceleration). We take what's smaller since, if the driver has the stick lower,
+            # it means they don't want the robot to go as fast. If the acceleration is lower, it means the robot is still accelerating
+            # and has not reached max speed, so we should not let the driver tell it to go faster. 
+            # We then multiply this minimum value by -1 if the original axis value was negative, to get the force in the proper direction
+            # again. 
+            #
+            # TL:DR; Make sure the robot does not go faster than the calculated velocity and desired velocity
             drivetrain_right_axis_value = min(abs(drivetrain_right_axis_value), velocity_right) * (-1 if drivetrain_right_axis_value < 0 else 1)
             drivetrain_left_axis_value = min(abs(drivetrain_left_axis_value), velocity_left) * (-1 if drivetrain_left_axis_value < 0 else 1)
 
-            # check if the value is inside of the deadband range
+            # Check if left stick is in deadband range.
+            # Being in deadband range happens when the stick is let go of. We ignore values
+            # between 5 and -5 because, when the stick is let go of, it's not always going to return 0.
             if drivetrain_left_axis_value < 5 and drivetrain_left_axis_value > -5:
-                # check if the left motor has already been stopped
+                # Check to see if the left motor is stopped already. The variable name 
+                # `drive_l_must_stop` means the motor is not yet stopped, but it should be the next time
+                # this variable is checked. We do it this way because constantly telling the motor to stop
+                # when we're within deadband is taxing to the motor and adds unnecessary overhead to the code,
+                # making it slower and using more resources. 
                 if drive_l_must_stop:
                     velocity_left = 0
                     # stop the left drive motor
@@ -96,9 +141,11 @@ def remote_control_loop():
                     # tell the code that the left motor has been stopped
                     drive_l_must_stop = False
             else:
-                # reset the toggle so that the deadband code knows to stop the left motor next
-                # time the input is in the deadband range
+                # Since the robot is moving, we reset the variable so it can be changed next time the
+                # stick is let go of. Even though this variable is True, it is never used to stop the 
+                # motor until the stick is in the deadband range again. 
                 drive_l_must_stop = True
+                
             # check if the value is inside of the deadband range
             if drivetrain_right_axis_value < 5 and drivetrain_right_axis_value > -5:
                 # check if the right motor has already been stopped
@@ -113,11 +160,12 @@ def remote_control_loop():
                 # time the input is in the deadband range
                 drive_r_must_stop = True
 
-            # only tell the left drive motor to spin if the values are not in the deadband range
+            # If the motors *must* stop, it means they haven't yet stopped. Therefore, we
+            # apply a new velocity to the motor and make them go forward.
             if drive_l_must_stop:
                 mgL.set_velocity(drivetrain_left_axis_value, PERCENT)
                 mgL.spin(FORWARD)
-            # only tell the right drive motor to spin if the values are not in the deadband range
+                
             if drive_r_must_stop:
                 mgR.set_velocity(drivetrain_right_axis_value, PERCENT)
                 mgR.spin(FORWARD)
@@ -128,16 +176,19 @@ def remote_control_loop():
             # to manual mode. 
             if controller.buttonY.pressing():
                 lift.spin(FORWARD)
-                lift_stopped = False
-                lift_toggled = False
+                lift_stopped = False # Since the lift is spinning, it is not stopped
+                lift_toggled = False # The lift should no longer be toggled since we switched to manual mode
+                
             elif controller.buttonB.pressing():
                 lift.spin(REVERSE)
                 lift_stopped = False
                 lift_toggled = False
+                
             elif lift_toggled:
                 lift.spin(FORWARD)
                 lift_stopped = False
-            elif not lift_stopped:
+                
+            elif not lift_stopped: # If none of the before conditions are true, and the lift is not stopped, stop it. 
                 lift.stop()
                 # set the toggle so that we don't constantly tell the motor to stop when
                 # the buttons are released
@@ -152,32 +203,47 @@ remote_control_thread = Thread(remote_control_loop)
 competition = None
 
 def driver_control():
-    # Register the functions to toggle components   
-
-    temp_thread = Thread(screen)
-    optical.set_light(0)
-    print("Control driver")
+    """
+    When it's driver control time, this function will run. This can be used to set up
+    the robot and get it ready to be driven. In our case, everything is already set up
+    so there's not much to do here.
+    """
+    temp_thread = Thread(screen) # Start showing temperatures on the controller screen
+    optical.set_light(0) # Don't burn out the optical LED from autonomous
 
 def motor_rot_avg():
-    # Get the average rotation of each motor, to get a 
-    # More accurate reading of far much we have gone
+    """
+    Take the rotation of each motor to return an average, to get a more accurate representation
+    of how far the robot has driven. 
+    """
     num = 0
 
     for motor in motors:
-        num += abs(motor.position())
+        num += abs(motor.position()) # Get the absolute value to tell us how far it's driven, doesn't matter what direction
 
     return num / len(motors)
 
 def reset_pos():
+    """
+    Reset the position of each motor to prepare them to measure another distance
+    """
     for motor in motors:
         motor.reset_position()
 
 def driven_dist():
-    # Get the distance we have driven based on rotation
+    """
+    Calculate the distance the robot has driven using the rotation of the wheels along with the 
+    gear ratio and wheel circumeference. 
+    """
     dist = (motor_rot_avg() / 360) * GEAR_RATIO * WHEEL_CIRC
     return dist
 
 def threaded_spin(motor: Motor, *args):
+    """
+    Make a motor spin in a thread so it's not blocking.
+    Useful for auto when we need to spin a motor like the intake but also do other stuff
+    at the same time. 
+    """
     Thread(motor.spin_for, args)
 
 class Auto:
@@ -186,11 +252,30 @@ class Auto:
     the drive_for and turn_for auto functions unless they know what they're doing.
     """
     def __init__(self):
+        # You'll take a look at the available autos and see all of these lambdas. What's a lambda?
+        # `lambda` is a keyword that's used to define an inline function. A lambda that's defined as 
+        # `lambda a: a + 1` is equivalent to the following code:
+        # def f(a):
+        #     return a + 1
+        # Lambda is useful so we can make an anonymous function that we only use once for a small amount of code
+        # Since the Competition() class doesn't accept arguments for the methods, if we *do* need to pass an 
+        # argument for the autos, like in auto_minus, we use lambda to make a single-use function that calls
+        # the method with the required arguments. So, when you see the line `lambda: self.auto_minus(Color.Red)`,
+        # that's the same as a function:
+        # def f():
+        #     return self.auto_minus(Color.Red)
+        #
+        # You'll also notice the odd syntax of (x, y). This is a `tuple`. Similar to a list, a tuple is an 
+        # immutable collection of objects. In this case, for each auto, we create a tuple where index 0 is
+        # the name of the auto, and index 1 is the function that calls the auto. This makes it easier to manage
+        # in the selector. These tuples are then stored in a list, so if we wanted to retrieve an item from a 
+        # tuple, it would be list[index_of_list][index_of_tuple], since list[index] returns the item of the list,
+        # in this case a tuple, which we can then immediately use by indexing the tuple. Confusing, I know. 
         self.available_autos = [
             ("Red Minus", lambda: self.auto_minus(Color.RED)),
             ("Blue Minus", lambda: self.auto_minus(Color.BLUE)),
-            ("Min", lambda: self.auto_min()),
-            ("Min + Score", lambda: self.auto_direct_score()),
+            ("Min", self.auto_min),
+            ("Min + Score", self.auto_direct_score),
             ("Blank", lambda: ...)
         ] # A list of tuples that contain a name for the auto and the method itself
         self.selected_auto = 2 # Index of available_autos
@@ -201,9 +286,10 @@ class Auto:
         Drive a certain distance. This algorithm uses the amount of rotations the motors
         to check if the bot has driven a certain distance.
         """
-        reset_pos()
-        wait(25, MSEC)
-        while driven_dist() < distance_in:
+        reset_pos() # Reset position so we don't count previously driven distance in our new calculation
+        wait(25, MSEC) # Wait a small time for the positions to update
+        
+        while driven_dist() < distance_in: # Drive until we reach our destination
             drivetrain.drive(direction, velocity_percent, PERCENT)
         
         drivetrain.stop(stop_type)
@@ -247,13 +333,16 @@ class Auto:
         while not optical.is_near_object() and driven_dist() < 48:
             drivetrain.drive(REVERSE, 45, PERCENT)
 
+        # Set the clamp down to make sure we grab the goal. We set it to False manually instead
+        # of using the toggle method to ensure the clamp is down instead of putting it back
+        # up if it was already down (which shouldn't normally happen).
         clamp.set(False)
         wait(250, MSEC)
         drivetrain.stop(BRAKE)
 
     def auto_minus(self, color):
         """
-        An auto that works on the opposite side of the field of the High Stake. This 
+        An auto that works on the minus side of the field. This 
         auto will, with a preload, grab another ring (be in possession of two), get a 
         mobile goal, and (attempt) to score both rings on the mobile goal.
 
@@ -268,6 +357,9 @@ class Auto:
         self.drive_for_auto(FORWARD, 36, 50) # Go 40 inches towards the rings
         wait(250, MSEC) # Wait a small amount of time to make sure the bot is settled
 
+        # Since this auto will hardly change if we're on separate sides of the field, we take the 
+        # color argument and use it in this single condition instead of creating an entirely new
+        # function with the same code. 
         if color == Color.RED:
             self.turn_for_auto(LEFT, 80, 10) # Turn 90 degrees to have the rear face a goal
         else:
@@ -284,6 +376,13 @@ class Auto:
         # In the way, then running forward into a latter post. 
 
     def auto_direct_score(self):
+        """
+        Do nothing but go forward and score our preload. 
+
+        Criteria:
+            - Same as auto_min()
+            - Requires a preload to be useful
+        """
         self.auto_min()
 
         lift.spin_for(FORWARD, 5, SECONDS)
@@ -293,15 +392,37 @@ class Auto:
         Autonomous selector allows the controller user to select which auto they are
         going to use
         """
+        # Global to make sure these variables can be used inside of the child functions
         global screen_should_be_refreshed, confirmed
 
         scr = brain.screen # A shortcut so we don't have to type it out each time
         screen_should_be_refreshed = True # To avoid unnecessary screen refreshes
-        confirmed = False
+        confirmed = False # If the auto is confirmed. 
 
+        # Python allows functions to be defined inside of other functions, but why do this?
+        # After all, we can simply define functions alongside of each other and call them through
+        # the class. Nesting functions can also cause some janky behavior with variables.
+        #
+        # I wrote this code with nested functions, or functions defined inside of functions, for the 
+        # sake of organization. These child functions (print_selected and screen_press) need to use 
+        # variables from its parent function (selector), since its parent function starts changing variables
+        # that are defined inside of its scope but still relative to what the child functions are doing.
+        # The Auto class wasn't meant to manage the state of any single autonomous period, rather to organize
+        # them all and give each method access to information they need. Since the state of the selector,
+        # like variables such as `screen_should_be_refreshed` and `confirmed`, are only relevant to itself,
+        # and the children functions are only relevant to the parent function, we group this all together in 
+        # its own little ecosystem. It can be thought of as a poor man's class, just an easier way to organize
+        # these functions rather than making an entire selector class. 
+        
         def print_selected():
             """
-            Print which auto is selected on the screen
+            Print which auto is selected on the brain screen.
+
+            The brain screen has a resolution of 480 x 272, but since the top 32 lines
+            of the screen are used for the VEX status bar, there's a usable area of 
+            480 x 240 to mess with. There is 480 usable pixels in the x range, and
+            240 usable in the y range. The system starts from (0,0) being the bottom
+            left of the screen. 
             """
             scr.clear_screen()
             scr.set_cursor(1, 0)
@@ -311,16 +432,25 @@ class Auto:
             scr.new_line()
             scr.print("(RED) to switch")
 
-            scr.draw_rectangle(10, 111, 225, 111, color=Color.RED)
-            scr.draw_rectangle(245, 111, 225, 111, color=Color.GREEN)
+            # Draw_rectangle() has the parameters start_x, start_y, 
+            # width, and height, where start_x and start_y are a point at the top-left
+            # of the rectangle and width and height are how far down or right the rectangle
+            # should expand. In this case, we make two equal squares each with a padding of
+            # 10px from the sides of the screen, and a 10px gap between them. 
+            scr.draw_rectangle(10, 120, 225, 110, color=Color.RED)
+            scr.draw_rectangle(250, 120, 225, 110, color=Color.GREEN)
 
         def screen_press():
+            """
+            Handle when the screen is pressed, or our colored buttons are touched. 
+            """
             touch_coords = (scr.x_position(), scr.y_position())
 
-            if touch_coords[1] < 111:
+            if touch_coords[1] < 110: # If the screen is touched above where the buttons are defined, we don't care
                 return
-
-            if touch_coords[0] < 225:
+            
+            # If x is less than 225, or the bottom-left of the screen is touched, we handle the red button actions
+            if touch_coords[0] < 225: 
                 self.selected_auto += 1
 
                 if self.selected_auto >= len(self.available_autos):
@@ -329,7 +459,8 @@ class Auto:
                 global screen_should_be_refreshed
                 screen_should_be_refreshed = True
 
-            elif touch_coords[0] > 245:
+            # If x is greater than 250, or the bottom-right of the screen is touched, we handle the green buttons
+            elif touch_coords[0] > 250:
                 scr.clear_screen()
 
                 scr.set_cursor(3, 0)
@@ -339,10 +470,18 @@ class Auto:
 
                 global competition
                 competition = Competition(driver_control, self.available_autos[self.selected_auto][1])
-            
-        brain.screen.pressed(screen_press)
 
+            # Technically, we aren't handling entirely within the bounds of the buttons here. In these conditions,
+            # We're checking if x < 225 and x > 250 and y < 110, which includes the padded area between the 
+            # button and the screen. This isn't too important, and we can argue that if the padding was touched, the 
+            # user wanted to perform the nearest action anyway. 
+        
+        brain.screen.pressed(screen_press) # Register the brain screen press event
+
+        # While the autonomous is not confirmed, we refresh the screen if it needs refreshing. 
         while not confirmed:
+            # Only refresh the screen if the selected auto has changed, since it causes an annoying 
+            # flashing effect if the screen is constantly refreshed. 
             if screen_should_be_refreshed:
                 print_selected()
                 global screen_should_be_refreshed
@@ -351,9 +490,22 @@ class Auto:
             wait(250, MSEC)
 
     def run(self):
+        """
+        A dummy function that could be a lambda that's just used to run our selected auto 
+        so we can define the Competition and have it ready to go before the auto is selected.
+        """
         self.available_autos[self.selected_auto][1]
 
 def screen():
+    """
+    Write the temperatures of the motors to the screen of the controller. This is hardly
+    useful during the competition, and could be more useful if managing a dynamic status
+    screen that can simply say "OVERHEATING" if the temperature gets too high. 
+    Having too much information available to the driver can be overwhelming, which
+    is why a second or third teammate is necessary on the field. The driver focuses on
+    driving the robot and listens to instructions from a teammate, who will gather information
+    about the field in order to filter and decode it for use by the driver. 
+    """
     # Have the controller show the temperatures of the drivetrain motors, for some reason.
     scr = controller.screen
     while True:
