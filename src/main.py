@@ -55,6 +55,8 @@ controller.buttonRight.pressed(toggle_lift)
 lift.set_velocity(100, PERCENT)
 lift.set_stopping(COAST) # I'm not sure if this actually changes anything
 
+clamp.set(True) # So the clamp is up when the game starts
+
 # Constants are a type of variable that don't change, or are always constant
 # It's easier to know what's going on when there are words rather than the same
 # numbre all over the place.
@@ -276,7 +278,7 @@ class Auto:
             ("Blue Minus", lambda: self.auto_minus(Color.BLUE)),
             ("Min", self.auto_min),
             ("Min + Score", self.auto_direct_score),
-            ("Blank", lambda: ...)
+            ("Blank", lambda: ...) # ... is the same as `pass`. This is an empty function
         ] # A list of tuples that contain a name for the auto and the method itself
         self.selected_auto = 2 # Index of available_autos
 
@@ -325,6 +327,10 @@ class Auto:
         - Must be facing backwards (intake towards wall)
         """
         reset_pos()
+
+        # Prepare the optical sensor
+        optical.set_light(100)
+        optical.object_detect_threshold(95)
         
         # Drive until the optical sensor on the back of the robot detects
         # a goal or until we have driven 48 inches.
@@ -535,11 +541,9 @@ def screen():
 
         wait(5, SECONDS) # Update the motor temperatures on the screen only every five seconds
 
-clamp.set(True) # So the clamp is up when the game starts
-optical.set_light(100)
-optical.object_detect_threshold(95)
-
 auto = Auto()
 auto.selector()
 
+# Finally, define and run the Competition class which communicates with the field controller. It'll run the 
+# driver_control() method when it's time for driver control, and the auto.run() method when it's time for auto
 competition = Competition(driver_control, auto.run)
