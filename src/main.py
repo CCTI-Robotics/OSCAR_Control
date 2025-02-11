@@ -504,7 +504,11 @@ def screen():
     Having too much information available to the driver can be overwhelming, which
     is why a second or third teammate is necessary on the field. The driver focuses on
     driving the robot and listens to instructions from a teammate, who will gather information
-    about the field in order to filter and decode it for use by the driver. 
+    about the field in order to filter and decode it for use by the driver.
+
+    A user from the VEX forum states motor current is cut in half at 55C, or about 131F. 
+    We could use this temperature to warn the driver that the robot is overheating. 
+    https://www.vexforum.com/t/v5-motor-temp-in-percent/52433/4
     """
     # Have the controller show the temperatures of the drivetrain motors, for some reason.
     scr = controller.screen
