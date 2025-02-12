@@ -518,15 +518,16 @@ def screen():
         print("Loopig")
 
         for motor in motors:
-            if motor.temperature() >= 55 and overheating == False:
+            if motor.temperature() >= 55:
                 overheating = True
+                break
             else:
                 overheating = False
         
         if overheating:
             scr.clear_screen()
             scr.set_cursor(1, 1)
-            scr.print("⚠ Warning ⚠")
+            scr.print("!!! Warning !!!")
             scr.next_row()
             scr.print("Drivetrain Overheating")
         else:
