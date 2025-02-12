@@ -202,16 +202,6 @@ def remote_control_loop():
 # define variable for remote controller enable/disable
 remote_control_code_enabled = True
 remote_control_thread = Thread(remote_control_loop)
-competition = None
-
-def driver_control():
-    """
-    When it's driver control time, this function will run. This can be used to set up
-    the robot and get it ready to be driven. In our case, everything is already set up
-    so there's not much to do here.
-    """
-    temp_thread = Thread(screen) # Start showing temperatures on the controller screen
-    optical.set_light(0) # Don't burn out the optical LED from autonomous
 
 def motor_rot_avg():
     """
@@ -276,8 +266,8 @@ class Auto:
         self.available_autos = [
             ("Red Minus", lambda: self.auto_minus(Color.RED)),
             ("Blue Minus", lambda: self.auto_minus(Color.BLUE)),
-            ("Min", self.auto_min),
-            ("Min + Score", self.auto_direct_score),
+            ("Min", lambda: self.auto_min()),
+            ("Min + Score", lambda: self.auto_direct_score()),
             ("Blank", lambda: ...) # ... is the same as `pass`. This is an empty function
         ] # A list of tuples that contain a name for the auto and the method itself
         self.selected_auto = 2 # Index of available_autos
@@ -393,7 +383,7 @@ class Auto:
 
         lift.spin_for(FORWARD, 5, SECONDS)
 
-    def selector(self):
+    def selector(self, competition: Competition):
         """
         Autonomous selector allows the controller user to select which auto they are
         going to use
@@ -474,8 +464,8 @@ class Auto:
                 scr.new_line()
                 scr.print("Ready to go! GHLF :)")
 
-                global competition
-                competition = Competition(driver_control, self.available_autos[self.selected_auto][1])
+                global confirmed
+                confirmed = True
 
             # Technically, we aren't handling entirely within the bounds of the buttons here. In these conditions,
             # We're checking if x < 225 and x > 250 and y < 110, which includes the padded area between the 
@@ -485,7 +475,7 @@ class Auto:
         brain.screen.pressed(screen_press) # Register the brain screen press event
 
         # While the autonomous is not confirmed, we refresh the screen if it needs refreshing. 
-        while not confirmed:
+        while not confirmed and (not competition.is_competition_switch() or competition.is_driver_control()):
             # Only refresh the screen if the selected auto has changed, since it causes an annoying 
             # flashing effect if the screen is constantly refreshed. 
             if screen_should_be_refreshed:
@@ -494,13 +484,15 @@ class Auto:
                 screen_should_be_refreshed = False
 
             wait(250, MSEC)
+        
+        print("All done!")
 
     def run(self):
         """
         A dummy function that could be a lambda that's just used to run our selected auto 
         so we can define the Competition and have it ready to go before the auto is selected.
         """
-        self.available_autos[self.selected_auto][1]
+        self.available_autos[self.selected_auto][1]()
 
 def screen():
     """
@@ -518,32 +510,50 @@ def screen():
     """
     # Have the controller show the temperatures of the drivetrain motors, for some reason.
     scr = controller.screen
+    overheating = False
+    print("Hi")
+
     while True:
         # Gather all of the temperatures
-        RT_temp = mgR_top.temperature(TemperatureUnits.FAHRENHEIT)
-        RB_temp = mgR_bottom.temperature(TemperatureUnits.FAHRENHEIT)
-        LT_temp = mgL_top.temperature(TemperatureUnits.FAHRENHEIT)
-        LB_temp = mgL_bottom.temperature(TemperatureUnits.FAHRENHEIT)
+        print("Loopig")
 
-        scr.clear_screen() # Make sure we aren't writing over anything
+        for motor in motors:
+            if motor.temperature() >= 55 and overheating == False:
+                overheating = True
+            else:
+                overheating = False
+        
+        if overheating:
+            scr.clear_screen()
+            scr.set_cursor(1, 1)
+            scr.print("⚠ Warning ⚠")
+            scr.next_row()
+            scr.print("Drivetrain Overheating")
+        else:
+            scr.clear_screen()
+            scr.set_cursor(1, 1)
+            scr.print("All good :)")
 
-        # Write all of the temperature data to the screen.
-        # I have no idea how many columns the controller has, so this may go off the
-        # screen or be horribly uncentered. This uses about 20 characters per row.
-        scr.set_cursor(1, 1)
-        scr.print("LT - " + str(int(LT_temp)))
-        scr.set_cursor(1, 10)
-        scr.print(" | RT - " + str(int(RT_temp)))
-        scr.set_cursor(2, 1)
-        scr.print("LB - " + str(int(LB_temp)))
-        scr.set_cursor(2, 10)
-        scr.print(" | RB - " + str(int(RB_temp)))
 
         wait(5, SECONDS) # Update the motor temperatures on the screen only every five seconds
 
-auto = Auto()
-auto.selector()
+def driver_control():
+    """
+    When it's driver control time, this function will run. This can be used to set up
+    the robot and get it ready to be driven. In our case, everything is already set up
+    so there's not much to do here.
+    """
+    optical.set_light(0) # Don't burn out the optical LED from autonomous
+    print("ASSAD")
 
+auto = Auto()
+Thread(screen)
+
+print("The end of the line")
 # Finally, define and run the Competition class which communicates with the field controller. It'll run the 
 # driver_control() method when it's time for driver control, and the auto.run() method when it's time for auto
 competition = Competition(driver_control, auto.run)
+
+auto.selector(competition)
+
+print(competition.is_driver_control())
