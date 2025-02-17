@@ -5,18 +5,22 @@ import math
 brain=Brain()
 
 # Robot configuration code
-mgR_top = Motor(Ports.PORT1, GearSetting.RATIO_6_1, True)
-mgR_bottom = Motor(Ports.PORT2, GearSetting.RATIO_6_1, False)
+mgR_top = Motor(Ports.PORT11, GearSetting.RATIO_6_1, True)
+mgR_bottom = Motor(Ports.PORT12, GearSetting.RATIO_6_1, False)
 mgR = MotorGroup(mgR_top, mgR_bottom)
-mgL_top = Motor(Ports.PORT11, GearSetting.RATIO_6_1, False)
-mgL_bottom = Motor(Ports.PORT12, GearSetting.RATIO_6_1, True)
+mgL_top = Motor(Ports.PORT16, GearSetting.RATIO_6_1, False)
+mgL_bottom = Motor(Ports.PORT17, GearSetting.RATIO_6_1, True)
 mgL = MotorGroup(mgL_top, mgL_bottom)
 controller = Controller(PRIMARY)
-inertial = Inertial(Ports.PORT18)
-drivetrain = SmartDrive(mgL, mgR, inertial, 319.19, 330, 320, MM, 1)
-lift = Motor(Ports.PORT7, GearSetting.RATIO_18_1, True)
+# inertial = Inertial(Ports.PORT18)
+drivetrain = DriveTrain(mgL, mgR, 319.19, 330, 320, MM, 1)
+lift = Motor(Ports.PORT1, GearSetting.RATIO_18_1, True)
+roller = Motor(Ports.PORT10, True)
+intake = MotorGroup(lift, roller)
 clamp = DigitalOut(brain.three_wire_port.a)
-optical = Optical(Ports.PORT5)
+pneum_lift_1 = DigitalOut(brain.three_wire_port.g)
+pneum_lift_2 = DigitalOut(brain.three_wire_port.h)
+optical = Optical(Ports.PORT6)
 
 motors = [mgL_top, mgL_bottom, mgR_top, mgR_bottom]
 
@@ -26,8 +30,8 @@ wait(200, MSEC)
 print("\033[2J")
 
 # define variables used for controlling motors based on controller inputs
-lift_stopped = True
-lift_toggled = False
+intake_stopped = True
+intake_toggled = False
 drive_l_must_stop = False
 drive_r_must_stop = False
 
@@ -38,22 +42,35 @@ def toggle_clamp():
     """
     clamp.set(not clamp.value())
 
-def toggle_lift():
+def toggle_intake():
     """
     An event to be called when the Right button is pressed to 
     toggle the lift. The lift will be automatically disabled
     when a manual control is pressed. See remote_control_loop()
     """
-    global lift_toggled
-    lift_toggled = not lift_toggled
+    global intake_toggled
+    intake_toggled = not intake_toggled
+
+
+def toggle_hang():
+    """
+    Extend the arms that allow the robot to hang in the air.
+    I decided to use pneum_lift_1's value for both so in case
+    they have a different value for any reason, they sync back up
+    once hanging is toggled.
+    """
+    pneum_lift_1.set(not pneum_lift_1.value())
+    pneum_lift_2.set(not pneum_lift_1.value())
+
 
 # Register the events to be pressed
 controller.buttonDown.pressed(toggle_clamp) 
-controller.buttonRight.pressed(toggle_lift)
+controller.buttonRight.pressed(toggle_intake)
+controller.buttonR2.pressed(toggle_hang)
 
 # Configure the lift
-lift.set_velocity(100, PERCENT)
-lift.set_stopping(COAST) # I'm not sure if this actually changes anything
+intake.set_velocity(100, PERCENT)
+intake.set_stopping(COAST) # I'm not sure if this actually changes anything
 
 clamp.set(True) # So the clamp is up when the game starts
 
@@ -76,7 +93,7 @@ def remote_control_loop():
     """
     # Everything is global so they are set outside of the current function instead of just being 
     # redefined here
-    global drive_l_must_stop, drive_r_must_stop, lift_stopped, lift_toggled, remote_control_code_enabled
+    global drive_l_must_stop, drive_r_must_stop, intake_stopped, intake_toggled, remote_control_code_enabled
     global last_time, delta, velocity_left, velocity_right
 
     # Define variables to be used only in this method
@@ -177,24 +194,24 @@ def remote_control_loop():
             # go forward or backward, it will untoggle the lift and switch back
             # to manual mode. 
             if controller.buttonY.pressing():
-                lift.spin(FORWARD)
-                lift_stopped = False # Since the lift is spinning, it is not stopped
-                lift_toggled = False # The lift should no longer be toggled since we switched to manual mode
+                intake.spin(FORWARD)
+                intake_stopped = False # Since the lift is spinning, it is not stopped
+                intake_toggled = False # The lift should no longer be toggled since we switched to manual mode
                 
             elif controller.buttonB.pressing():
-                lift.spin(REVERSE)
-                lift_stopped = False
-                lift_toggled = False
+                intake.spin(REVERSE)
+                intake_stopped = False
+                intake_toggled = False
                 
-            elif lift_toggled:
-                lift.spin(FORWARD)
-                lift_stopped = False
+            elif intake_toggled:
+                intake.spin(FORWARD)
+                intake_stopped = False
                 
-            elif not lift_stopped: # If none of the before conditions are true, and the lift is not stopped, stop it. 
-                lift.stop()
+            elif not intake_stopped: # If none of the before conditions are true, and the lift is not stopped, stop it. 
+                intake.stop()
                 # set the toggle so that we don't constantly tell the motor to stop when
                 # the buttons are released
-                lift_stopped = True
+                intake_stopped = True
 
         # wait before repeating the process
         wait(20, MSEC)
@@ -230,7 +247,7 @@ def driven_dist():
     dist = (motor_rot_avg() / 360) * GEAR_RATIO * WHEEL_CIRC
     return dist
 
-def threaded_spin(motor: Motor, *args):
+def threaded_spin(motor: "Motor | MotorGroup", *args):
     """
     Make a motor spin in a thread so it's not blocking.
     Useful for auto when we need to spin a motor like the intake but also do other stuff
@@ -349,7 +366,7 @@ class Auto:
         - Must be facing forward (clamp toward wall)
         """
 
-        threaded_spin(lift, 1500, MSEC) # Spin the intake while we move toward the field ring
+        threaded_spin(intake, 1500, MSEC) # Spin the intake while we move toward the field ring
         self.drive_for_auto(FORWARD, 36, 50) # Go 40 inches towards the rings
         wait(250, MSEC) # Wait a small amount of time to make sure the bot is settled
 
@@ -365,7 +382,7 @@ class Auto:
 
         self.auto_min() # Go backward until we get the mobile goal
 
-        lift.spin_for(FORWARD, 5, SECONDS) # Score the rings while we're moving
+        intake.spin_for(FORWARD, 5, SECONDS) # Score the rings while we're moving
 
         # We can also go a little further to make sure we're touching the middle ladder
         # This would consist of probably facing backwards so our mobile goal doesn't get
@@ -381,7 +398,7 @@ class Auto:
         """
         self.auto_min()
 
-        lift.spin_for(FORWARD, 5, SECONDS)
+        intake.spin_for(FORWARD, 5, SECONDS)
 
     def selector(self, competition: Competition):
         """
