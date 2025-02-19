@@ -72,8 +72,6 @@ controller.buttonR2.pressed(toggle_hang)
 intake.set_velocity(100, PERCENT)
 intake.set_stopping(COAST) # I'm not sure if this actually changes anything
 
-clamp.set(True) # So the clamp is up when the game starts
-
 # Constants are a type of variable that don't change, or are always constant
 # It's easier to know what's going on when there are words rather than the same
 # numbre all over the place.
@@ -288,6 +286,8 @@ class Auto:
             ("Blank", lambda: ...) # ... is the same as `pass`. This is an empty function
         ] # A list of tuples that contain a name for the auto and the method itself
         self.selected_auto = 2 # Index of available_autos
+        self.roller_should_be_moving = False
+        self.lift_should_be_moving = True
 
     @staticmethod
     def drive_for_auto(direction, distance_in: float, velocity_percent: int, stop_type = BRAKE):
@@ -337,19 +337,35 @@ class Auto:
 
         # Prepare the optical sensor
         optical.set_light(100)
-        optical.object_detect_threshold(95)
+        # "Object Detect Threshold" isn't defined anywhere to tell us what exactly
+        # that means. I've learned that it only goes up to 255 and the higher the 
+        # number, the closer an object needs to be to be detected. If the value is 
+        # 255, it just never detects anything. We want to get as close as possible
+        # without being detected to be more accurate.
+        optical.object_detect_threshold(254)
         
         # Drive until the optical sensor on the back of the robot detects
         # a goal or until we have driven 48 inches.
         # This is a failsafe in case the sensor or process malfunctions
         # to make sure we don't go over the line and get DQ'd
-        while not optical.is_near_object() and driven_dist() < 48:
+        timer = False
+
+        while driven_dist() < 48:
             drivetrain.drive(REVERSE, 45, PERCENT)
+
+            if timer and timer.time() >= 500:
+                clamp.set(True)
+                break
+
+            if optical.is_near_object() and not timer:
+                timer = Timer()
+            
+            wait(5, MSEC)
 
         # Set the clamp down to make sure we grab the goal. We set it to False manually instead
         # of using the toggle method to ensure the clamp is down instead of putting it back
         # up if it was already down (which shouldn't normally happen).
-        clamp.set(False)
+        clamp.set(True)
         wait(250, MSEC)
         drivetrain.stop(BRAKE)
 
@@ -390,7 +406,7 @@ class Auto:
 
     def auto_direct_score(self):
         """
-        Do nothing but go forward and score our preload. 
+        Do nothing but go backward and score our preload. 
 
         Criteria:
             - Same as auto_min()
@@ -398,7 +414,7 @@ class Auto:
         """
         self.auto_min()
 
-        intake.spin_for(FORWARD, 5, SECONDS)
+        intake.spin_for(FORWARD, 3, SECONDS)
 
     def selector(self, competition: Competition):
         """
@@ -511,7 +527,13 @@ class Auto:
         """
         self.available_autos[self.selected_auto][1]()
 
-def screen():
+        controller.screen.clear_screen()
+        controller.screen.set_cursor(1, 1)
+        controller.screen.print("Running Auto:")
+        controller.screen.next_row()
+        controller.screen.print(self.available_autos[self.selected_auto][0])
+
+def controller_screen():
     """
     Write the temperatures of the motors to the screen of the controller. This is hardly
     useful during the competition, and could be more useful if managing a dynamic status
@@ -562,16 +584,13 @@ def driver_control():
     so there's not much to do here.
     """
     optical.set_light(0) # Don't burn out the optical LED from autonomous
-    print("ASSAD")
+    Thread(controller_screen)
 
 auto = Auto()
-Thread(screen)
 
-print("The end of the line")
 # Finally, define and run the Competition class which communicates with the field controller. It'll run the 
 # driver_control() method when it's time for driver control, and the auto.run() method when it's time for auto
 competition = Competition(driver_control, auto.run)
 
 auto.selector(competition)
 
-print(competition.is_driver_control())
