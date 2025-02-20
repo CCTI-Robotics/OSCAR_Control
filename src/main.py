@@ -111,6 +111,8 @@ def remote_control_loop():
             # Calculate the drivetrain motor velocities from the controller joystick axes
             # left = axis3 + axis1
             # right = axis3 - axis1
+            # Axis3 is the left up-down joystick, allows the bot to go forward and backward
+            # Axis1 is the right left-right joystick, allows the bot to rotate
             drivetrain_left_axis_value = controller.axis3.position() + controller.axis1.position()
             drivetrain_right_axis_value = controller.axis3.position() - controller.axis1.position()
 
@@ -139,13 +141,13 @@ def remote_control_loop():
             # again. 
             #
             # TL:DR; Make sure the robot does not go faster than the calculated velocity and desired velocity
-            drivetrain_right_axis_value = min(abs(drivetrain_right_axis_value), velocity_right) * (-1 if drivetrain_right_axis_value < 0 else 1)
-            drivetrain_left_axis_value = min(abs(drivetrain_left_axis_value), velocity_left) * (-1 if drivetrain_left_axis_value < 0 else 1)
+            drive_right = min(abs(drivetrain_right_axis_value), velocity_right) * (-1 if drivetrain_right_axis_value < 0 else 1)
+            drive_left = min(abs(drivetrain_left_axis_value), velocity_left) * (-1 if drivetrain_left_axis_value < 0 else 1)
 
             # Check if left stick is in deadband range.
             # Being in deadband range happens when the stick is let go of. We ignore values
             # between 5 and -5 because, when the stick is let go of, it's not always going to return 0.
-            if drivetrain_left_axis_value < 5 and drivetrain_left_axis_value > -5:
+            if drive_left < 5 and drive_left > -5:
                 # Check to see if the left motor is stopped already. The variable name 
                 # `drive_l_must_stop` means the motor is not yet stopped, but it should be the next time
                 # this variable is checked. We do it this way because constantly telling the motor to stop
@@ -164,7 +166,7 @@ def remote_control_loop():
                 drive_l_must_stop = True
                 
             # check if the value is inside of the deadband range
-            if drivetrain_right_axis_value < 5 and drivetrain_right_axis_value > -5:
+            if drive_right < 5 and drive_right > -5:
                 # check if the right motor has already been stopped
                 if drive_r_must_stop:
                     velocity_right = 0
@@ -177,14 +179,28 @@ def remote_control_loop():
                 # time the input is in the deadband range
                 drive_r_must_stop = True
 
+            # TODO: Make sure this works as intended and isn't just nonsense.
+            # We had an issue with turning the robot that made handling more difficult. When the robot is trying to move with both axes
+            # (going forward/backward and turning), once the right stick was released (so the robot stops turning), the bot would still 
+            # continue turning for a while before stopping. I believe the cause of this issue relates to the acceleration, when
+            # one side is at full throttle when the right stick is released, so one side is at 100% velocity while the other side is still
+            # accelerating back up to 100%, leaving a second or so where one side still has more power than the other, causing the bot to 
+            # continue turning for a short time. We can solve this issue by setting the velocity of both sides equal to each other 
+            # Unless the robot is turning.
+            if (drive_left > 0 and drive_right > 0) or (drive_left < 0 and drive_right < 0) and not (drive_left == drive_right):
+                if drive_left < drive_right:
+                    drive_left = drive_right
+                else:
+                    drive_right = drive_left
+
             # If the motors *must* stop, it means they haven't yet stopped. Therefore, we
             # apply a new velocity to the motor and make them go forward.
             if drive_l_must_stop:
-                mgL.set_velocity(drivetrain_left_axis_value, PERCENT)
+                mgL.set_velocity(drive_left, PERCENT)
                 mgL.spin(FORWARD)
                 
             if drive_r_must_stop:
-                mgR.set_velocity(drivetrain_right_axis_value, PERCENT)
+                mgR.set_velocity(drive_right, PERCENT)
                 mgR.spin(FORWARD)
 
             # When the lift is toggled via the right button with toggle_lift,
@@ -428,6 +444,8 @@ class Auto:
         screen_should_be_refreshed = True # To avoid unnecessary screen refreshes
         confirmed = False # If the auto is confirmed. 
 
+        scr.set_font(FontType.MONO20) # Make our text bigger
+
         # Python allows functions to be defined inside of other functions, but why do this?
         # After all, we can simply define functions alongside of each other and call them through
         # the class. Nesting functions can also cause some janky behavior with variables.
@@ -522,16 +540,15 @@ class Auto:
 
     def run(self):
         """
-        A dummy function that could be a lambda that's just used to run our selected auto 
-        so we can define the Competition and have it ready to go before the auto is selected.
+        Used to run our selected auto 
         """
-        self.available_autos[self.selected_auto][1]()
-
         controller.screen.clear_screen()
         controller.screen.set_cursor(1, 1)
         controller.screen.print("Running Auto:")
         controller.screen.next_row()
         controller.screen.print(self.available_autos[self.selected_auto][0])
+
+        self.available_autos[self.selected_auto][1]()
 
 def controller_screen():
     """
@@ -550,11 +567,9 @@ def controller_screen():
     # Have the controller show the temperatures of the drivetrain motors, for some reason.
     scr = controller.screen
     overheating = False
-    print("Hi")
 
     while True:
         # Gather all of the temperatures
-        print("Loopig")
 
         for motor in motors:
             if motor.temperature() >= 55:
@@ -571,7 +586,7 @@ def controller_screen():
             scr.print("Drivetrain Overheating")
         else:
             scr.clear_screen()
-            scr.set_cursor(1, 1)
+            scr.set_cursor(2, 1)
             scr.print("All good :)")
 
 
