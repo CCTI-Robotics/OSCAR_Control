@@ -12,7 +12,7 @@ mgL_top = Motor(Ports.PORT16, GearSetting.RATIO_6_1, False)
 mgL_bottom = Motor(Ports.PORT17, GearSetting.RATIO_6_1, True)
 mgL = MotorGroup(mgL_top, mgL_bottom)
 controller = Controller(PRIMARY)
-# inertial = Inertial(Ports.PORT18)
+inertial = Inertial(Ports.PORT8)
 drivetrain = DriveTrain(mgL, mgR, 319.19, 330, 320, MM, 1)
 lift = Motor(Ports.PORT1, GearSetting.RATIO_18_1, True)
 roller = Motor(Ports.PORT10, True)
@@ -295,13 +295,13 @@ class Auto:
         # tuple, it would be list[index_of_list][index_of_tuple], since list[index] returns the item of the list,
         # in this case a tuple, which we can then immediately use by indexing the tuple. Confusing, I know. 
         self.available_autos = [
-            ("Red Minus", lambda: self.auto_minus(Color.RED)),
-            ("Blue Minus", lambda: self.auto_minus(Color.BLUE)),
             ("Min", lambda: self.auto_min()),
             ("Min + Score", lambda: self.auto_direct_score()),
+            ("Red Minus", lambda: self.auto_minus(Color.RED)),
+            ("Blue Minus", lambda: self.auto_minus(Color.BLUE)),
             ("Blank", lambda: ...) # ... is the same as `pass`. This is an empty function
         ] # A list of tuples that contain a name for the auto and the method itself
-        self.selected_auto = 2 # Index of available_autos
+        self.selected_auto = 0 # Index of available_autos
         self.roller_should_be_moving = False
         self.lift_should_be_moving = True
 
@@ -325,16 +325,37 @@ class Auto:
         Autonomously turn a certain amount. This algorithm uses the rotations of the
         motor to dictate how far the robot has rotated. Seems to be decently innacurate.
         """
-        reset_pos() # Make sure the position readings are fresh
+        def _imuturn():
+            inertial.reset_heading()
+            
+            while True:
+                heading = inertial.heading()
+                print(heading)
 
-        turn_radius = WHEEL_BASE / 2 
-        turning_circumference = 2 * math.pi * turn_radius
-        turn_dist = (distance_deg / 360) * turning_circumference # The amount of inches the wheels need to travel to rotate that amount of degrees
+                if direction == LEFT:
+                    heading -= 180
+                
+                if -5 < heading - distance_deg < 5:
+                    break
 
-        while driven_dist() < turn_dist:
-            drivetrain.turn(direction, velocity_percent, PERCENT)
+                drivetrain.turn(direction, velocity_percent, PERCENT)
+            
+            drivetrain.stop(BRAKE)
 
-        drivetrain.stop(BRAKE)
+        def _motorturn():
+            reset_pos() # Make sure the position readings are fresh
+
+            turn_radius = WHEEL_BASE / 2 
+            turning_circumference = 2 * math.pi * turn_radius
+            turn_dist = (distance_deg / 360) * turning_circumference # The amount of inches the wheels need to travel to rotate that amount of degrees
+
+            while driven_dist() < turn_dist:
+                drivetrain.turn(direction, velocity_percent, PERCENT)
+
+            drivetrain.stop(BRAKE)
+        
+        _imuturn()
+
 
     def auto_min(self):
         """
@@ -369,7 +390,7 @@ class Auto:
         while driven_dist() < 48:
             drivetrain.drive(REVERSE, 45, PERCENT)
 
-            if timer and timer.time() >= 500:
+            if timer and timer.time() >= 50:
                 clamp.set(True)
                 break
 
@@ -378,11 +399,13 @@ class Auto:
             
             wait(5, MSEC)
 
-        # Set the clamp down to make sure we grab the goal. We set it to False manually instead
+        # Set the clamp down to make sure we grab the goal. We set it to True manually instead
         # of using the toggle method to ensure the clamp is down instead of putting it back
         # up if it was already down (which shouldn't normally happen).
         clamp.set(True)
         wait(250, MSEC)
+
+        self.drive_for_auto(FORWARD, 12, 30)
         drivetrain.stop(BRAKE)
 
     def auto_minus(self, color):
@@ -406,9 +429,9 @@ class Auto:
         # color argument and use it in this single condition instead of creating an entirely new
         # function with the same code. 
         if color == Color.RED:
-            self.turn_for_auto(LEFT, 80, 10) # Turn 90 degrees to have the rear face a goal
+            self.turn_for_auto(LEFT, 86, 3) # Turn 90 degrees to have the rear face a goal
         else:
-            self.turn_for_auto(RIGHT, 80, 10) 
+            self.turn_for_auto(RIGHT, 86, 3) 
              
         wait(250, MSEC) # Let the bot rest
 
@@ -542,11 +565,16 @@ class Auto:
         """
         Used to run our selected auto 
         """
+        inertial.calibrate()
+
         controller.screen.clear_screen()
         controller.screen.set_cursor(1, 1)
         controller.screen.print("Running Auto:")
         controller.screen.next_row()
         controller.screen.print(self.available_autos[self.selected_auto][0])
+
+        while inertial.is_calibrating():
+            wait(5, MSEC)
 
         self.available_autos[self.selected_auto][1]()
 
@@ -608,4 +636,3 @@ auto = Auto()
 competition = Competition(driver_control, auto.run)
 
 auto.selector(competition)
-
